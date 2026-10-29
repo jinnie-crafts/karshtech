@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-primary: #101014;
+    --bg-elevated: #242329;
+    --bg-secondary: #1A191F;
+    --bg-inset: #0A0A0D;
+
+    --accent-ember: #FF5A36;
+    --accent-ember-hover: #FF7454;
+    --accent-ember-glow: rgba(255, 90, 54, 0.2);
+
+    --text-primary: #F4F0E8;
+    --text-body: #C2BEC1;
+    --text-muted: #96929A;
+
+    --border-subtle: #39363A;
+    --border-hover: #524E54;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #101014;
+    color: #C2BEC1;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-color: #101014;
+    color: #C2BEC1;
+  }
+
+  /* Cinematic custom scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #101014;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #242329;
+    border-radius: 3px;
+    border: 1px solid #1A191F;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #FF5A36;
+  }
+}
+
+/* Typography Classes */
+.font-display {
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.font-sans,
+.font-body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.font-mono-code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Cinematic Surface Utilities */
+.cinematic-panel {
+  background-color: #1A191F;
+  border: 1px solid #39363A;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.cinematic-panel:hover {
+  border-color: #524E54;
+}
+
+.cinematic-panel-elevated {
+  background-color: #242329;
+  border: 1px solid #39363A;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.cinematic-panel-elevated:hover {
+  border-color: #524E54;
+}
+
+.cinematic-card-interactive {
+  background-color: #1A191F;
+  border: 1px solid #39363A;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.cinematic-card-interactive:hover {
+  border-color: rgba(255, 90, 54, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.6), 0 0 24px -6px rgba(255, 90, 54, 0.12);
+}
+
+/* Cinematic Input Styles */
+.cinematic-input {
+  background-color: #0A0A0D;
+  border: 1px solid #39363A;
+  color: #F4F0E8;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cinematic-input:focus {
+  border-color: #FF5A36;
+  box-shadow: 0 0 0 2px rgba(255, 90, 54, 0.18);
+  outline: none;
+}
+
+/* Ember Buttons */
+.btn-ember {
+  background-color: #FF5A36;
+  color: #101014;
+  font-weight: 700;
+  transition: background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-ember:hover {
+  background-color: #FF7454;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -4px rgba(255, 90, 54, 0.35);
+}
+
+.btn-ember:active {
+  transform: translateY(0);
+}
+
+.btn-outline {
+  background-color: #1A191F;
+  border: 1px solid #39363A;
+  color: #F4F0E8;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.btn-outline:hover {
+  border-color: #FF5A36;
+  color: #FF5A36;
+  background-color: #242329;
+}
+
+/* Subtle Cinematic Film Glow */
+.ember-glow-sm {
+  box-shadow: 0 0 16px rgba(255, 90, 54, 0.2);
+}
+
+.ember-glow-md {
+  box-shadow: 0 0 32px rgba(255, 90, 54, 0.25);
+}
+
+/* Reduced motion handling */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
