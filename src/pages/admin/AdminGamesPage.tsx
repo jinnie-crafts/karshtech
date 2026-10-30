@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { GameFormModal } from '../../components/admin/GameFormModal';
 import { DeleteConfirmModal } from '../../components/admin/DeleteConfirmModal';
+import { ReleaseUploadModal } from '../../components/admin/ReleaseUploadModal';
 import { ToastContainer, type ToastMessage } from '../../components/admin/Toast';
 import { AnimatedBadge } from '../../components/AnimatedBadge';
 import { Link } from '../../context/RouterContext';
@@ -16,6 +17,7 @@ import {
   Smartphone,
   Monitor,
   Star,
+  UploadCloud,
 } from 'lucide-react';
 
 export const AdminGamesPage: React.FC = () => {
@@ -28,6 +30,8 @@ export const AdminGamesPage: React.FC = () => {
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [gameToDelete, setGameToDelete] = useState<Game | null>(null);
+  const [isReleaseModalOpen, setIsReleaseModalOpen] = useState(false);
+  const [releaseGameId, setReleaseGameId] = useState<string>('');
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -202,6 +206,17 @@ export const AdminGamesPage: React.FC = () => {
                           </Link>
 
                           <button
+                            onClick={() => {
+                              setReleaseGameId(game.id);
+                              setIsReleaseModalOpen(true);
+                            }}
+                            className="p-1.5 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] hover:text-[#F4F0E8] hover:border-[#FF5A36] transition-colors"
+                            title="Upload / Deploy Release APK"
+                          >
+                            <UploadCloud className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
                             onClick={() => handleEdit(game)}
                             className="p-1.5 rounded bg-[#242329] border border-[#39363A] text-[#F4F0E8] hover:border-[#FF5A36]/60 transition-colors"
                             title="Edit Game"
@@ -241,6 +256,21 @@ export const AdminGamesPage: React.FC = () => {
             'success',
             selectedGame ? 'Game updated successfully!' : 'Game created successfully!'
           );
+          loadGames();
+        }}
+      />
+
+      {/* Release Upload Modal directly from Game Catalog */}
+      <ReleaseUploadModal
+        isOpen={isReleaseModalOpen}
+        onClose={() => {
+          setIsReleaseModalOpen(false);
+          setReleaseGameId('');
+        }}
+        games={games}
+        initialGameId={releaseGameId}
+        onSaved={() => {
+          showToast('success', 'Release APK deployed successfully!');
           loadGames();
         }}
       />

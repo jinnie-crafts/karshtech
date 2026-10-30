@@ -39,10 +39,10 @@ export async function run() {
     const productsList = res.data?.products || [];
     const isArray = Array.isArray(productsList);
     const hasArrow = isArray && productsList.some((p) => p.slug === 'arrow-puzzle' && p.category === 'Games');
-    const hasPlatform = isArray && productsList.some((p) => p.slug === 'karsh-tech-platform' && p.category === 'Web Applications');
-    assert(1, 'GET /api/products returns array with bridged games & products', res.status === 200 && hasArrow && hasPlatform, `Status: ${res.status}, hasArrow: ${hasArrow}, hasPlatform: ${hasPlatform}`);
+    const hasPlatform = isArray && productsList.some((p) => p.slug === 'karsh-tech-platform');
+    assert(1, 'GET /api/products returns array with bridged games & excludes karsh-tech-platform', res.status === 200 && hasArrow && !hasPlatform, `Status: ${res.status}, hasArrow: ${hasArrow}, hasPlatform: ${hasPlatform}`);
   } catch (err) {
-    assert(1, 'GET /api/products returns array with bridged games & products', false, err.message);
+    assert(1, 'GET /api/products returns array with bridged games & excludes karsh-tech-platform', false, err.message);
   }
 
   // 2. Public Category Filtering
@@ -52,7 +52,7 @@ export async function run() {
     const allGames = Array.isArray(gamesList) && gamesList.length > 0 && gamesList.every((p) => p.category === 'Games');
     const resWeb = await fetchJson(`${BASE_URL}/api/products?category=Web Applications`);
     const webList = resWeb.data?.products || [];
-    const allWeb = Array.isArray(webList) && webList.length > 0 && webList.every((p) => p.category === 'Web Applications');
+    const allWeb = Array.isArray(webList) && webList.every((p) => p.category === 'Web Applications');
     assert(2, 'Category filter returns category-specific products', resGames.status === 200 && allGames && allWeb, `allGames: ${allGames}, allWeb: ${allWeb}`);
   } catch (err) {
     assert(2, 'Category filter returns category-specific products', false, err.message);
@@ -63,10 +63,10 @@ export async function run() {
     const resGame = await fetchJson(`${BASE_URL}/api/products/arrow-puzzle`);
     const resProd = await fetchJson(`${BASE_URL}/api/products/karsh-tech-platform`);
     const gameOk = resGame.status === 200 && resGame.data?.product?.name === 'Arrow Puzzle';
-    const prodOk = resProd.status === 200 && resProd.data?.product?.slug === 'karsh-tech-platform';
-    assert(3, 'GET /api/products/:slug resolves both bridged game and native product', gameOk && prodOk, `gameOk: ${gameOk}, prodOk: ${prodOk}`);
+    const prodNotFound = resProd.status === 404;
+    assert(3, 'GET /api/products/:slug resolves bridged game and confirms karsh-tech-platform is 404', gameOk && prodNotFound, `gameOk: ${gameOk}, prodStatus: ${resProd.status}`);
   } catch (err) {
-    assert(3, 'GET /api/products/:slug resolves both bridged game and native product', false, err.message);
+    assert(3, 'GET /api/products/:slug resolves bridged game and confirms karsh-tech-platform is 404', false, err.message);
   }
 
   // 4. Admin Auth Protection for Products API
@@ -221,6 +221,155 @@ export async function run() {
     assert(14, 'Admin stats telemetry includes total_products and published_products', res.status === 200 && hasProductStats, `total_products: ${s?.total_products}`);
   } catch (err) {
     assert(14, 'Admin stats telemetry includes total_products and published_products', false, err.message);
+  }
+
+  // 15. Automatic Newest-First Chronological Ordering across products
+  const testIds = [];
+  try {
+    // Create product 1 (oldest of the 3)
+    const p1Res = await fetchJson(`${BASE_URL}/api/admin/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: 'Sorting Test Alpha',
+        category: 'Web Applications',
+        description: 'First test product',
+        status: 'Published',
+      }),
+    });
+    const id1 = p1Res.data?.product?.id;
+    testIds.push(id1);
+
+    // Short pause to guarantee distinct ISO timestamp
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Create product 2 (middle)
+    const p2Res = await fetchJson(`${BASE_URL}/api/admin/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: 'Sorting Test Beta',
+        category: 'Mobile Applications',
+        description: 'Second test product',
+        status: 'Published',
+      }),
+    });
+    const id2 = p2Res.data?.product?.id;
+    testIds.push(id2);
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Create product 3 (newest)
+    const p3Res = await fetchJson(`${BASE_URL}/api/admin/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: 'Sorting Test Gamma',
+        category: 'Custom Software',
+        description: 'Third test product',
+        status: 'Published',
+      }),
+    });
+    const id3 = p3Res.data?.product?.id;
+    testIds.push(id3);
+
+    // Fetch public products and verify Gamma comes before Beta, and Beta comes before Alpha
+    const pubRes = await fetchJson(`${BASE_URL}/api/products`);
+    const allProducts = pubRes.data?.products || [];
+    const idxGamma = allProducts.findIndex((p) => p.id === id3);
+    const idxBeta = allProducts.findIndex((p) => p.id === id2);
+    const idxAlpha = allProducts.findIndex((p) => p.id === id1);
+
+    const isNewestFirst = idxGamma !== -1 && idxBeta !== -1 && idxAlpha !== -1 && idxGamma < idxBeta && idxBeta < idxAlpha;
+    assert(15, 'Public Products API returns newly created items in strict newest-first order', pubRes.status === 200 && isNewestFirst, `idxGamma: ${idxGamma}, idxBeta: ${idxBeta}, idxAlpha: ${idxAlpha}`);
+  } catch (err) {
+    assert(15, 'Public Products API returns newly created items in strict newest-first order', false, err.message);
+  }
+
+  // 16. Preservation of created_at on product update (editing an older item must NOT jump to top)
+  try {
+    const id1 = testIds[0];
+    const originalRes = await fetchJson(`${BASE_URL}/api/admin/products/${id1}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const originalCreatedAt = originalRes.data?.product?.created_at;
+
+    // Small delay, then edit Product Alpha
+    await new Promise((r) => setTimeout(r, 20));
+    const updateRes = await fetchJson(`${BASE_URL}/api/admin/products/${id1}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: 'Sorting Test Alpha - Edited Description',
+        description: 'Updated description content',
+      }),
+    });
+    const updatedCreatedAt = updateRes.data?.product?.created_at;
+
+    // Fetch public products again and verify order remains Gamma < Beta < Alpha
+    const pubRes = await fetchJson(`${BASE_URL}/api/products`);
+    const allProducts = pubRes.data?.products || [];
+    const idxGamma = allProducts.findIndex((p) => p.id === testIds[2]);
+    const idxBeta = allProducts.findIndex((p) => p.id === testIds[1]);
+    const idxAlpha = allProducts.findIndex((p) => p.id === testIds[0]);
+
+    const timestampPreserved = originalCreatedAt === updatedCreatedAt;
+    const orderUnchanged = idxGamma < idxBeta && idxBeta < idxAlpha;
+
+    assert(16, 'Updating product preserves created_at and does NOT move older product to top', timestampPreserved && orderUnchanged, `timestampPreserved: ${timestampPreserved}, orderUnchanged: ${orderUnchanged}`);
+  } catch (err) {
+    assert(16, 'Updating product preserves created_at and does NOT move older product to top', false, err.message);
+  }
+
+  // 17. Unified chronological sorting across native products and bridged games
+  try {
+    const pubRes = await fetchJson(`${BASE_URL}/api/products`);
+    const allProducts = pubRes.data?.products || [];
+    let strictlyOrdered = true;
+    for (let i = 0; i < allProducts.length - 1; i++) {
+      const timeCurrent = new Date(allProducts[i].created_at).getTime();
+      const timeNext = new Date(allProducts[i + 1].created_at).getTime();
+      if (timeCurrent < timeNext) {
+        strictlyOrdered = false;
+        break;
+      }
+    }
+    assert(17, 'Entire unified catalogue (products + games) is monotonically ordered newest-to-oldest', allProducts.length >= 4 && strictlyOrdered, `Count: ${allProducts.length}, strictlyOrdered: ${strictlyOrdered}`);
+  } catch (err) {
+    assert(17, 'Entire unified catalogue (products + games) is monotonically ordered newest-to-oldest', false, err.message);
+  }
+
+  // 18. Admin endpoint GET /api/admin/products returns newest-first by default
+  try {
+    const adminRes = await fetchJson(`${BASE_URL}/api/admin/products`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const adminProducts = adminRes.data?.products || [];
+    let adminStrictlyOrdered = true;
+    for (let i = 0; i < adminProducts.length - 1; i++) {
+      const timeCurrent = new Date(adminProducts[i].created_at).getTime();
+      const timeNext = new Date(adminProducts[i + 1].created_at).getTime();
+      if (timeCurrent < timeNext) {
+        adminStrictlyOrdered = false;
+        break;
+      }
+    }
+    assert(18, 'Admin GET /api/admin/products returns records newest-first by default', adminProducts.length >= 3 && adminStrictlyOrdered, `Count: ${adminProducts.length}, ordered: ${adminStrictlyOrdered}`);
+  } catch (err) {
+    assert(18, 'Admin GET /api/admin/products returns records newest-first by default', false, err.message);
+  }
+
+  // 19. Clean up temporary test products
+  try {
+    for (const tid of testIds) {
+      await fetchJson(`${BASE_URL}/api/admin/products/${tid}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+    assert(19, 'Temporary sorting test products cleaned up successfully', true, 'Cleaned');
+  } catch (err) {
+    assert(19, 'Temporary sorting test products cleaned up successfully', false, err.message);
   }
 
   console.log(`\n=== SUITE COMPLETE: ${passed} PASSED, ${failed} FAILED ===\n`);

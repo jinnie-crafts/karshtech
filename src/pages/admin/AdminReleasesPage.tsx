@@ -84,12 +84,24 @@ export const AdminReleasesPage: React.FC = () => {
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    try {
+      const freshGames = await api.getAdminGames();
+      setGames(freshGames);
+    } catch (err) {
+      console.error('Failed to refresh games list:', err);
+    }
     setSelectedRelease(null);
     setIsModalOpen(true);
   };
 
-  const handleEdit = (rel: Release) => {
+  const handleEdit = async (rel: Release) => {
+    try {
+      const freshGames = await api.getAdminGames();
+      setGames(freshGames);
+    } catch (err) {
+      console.error('Failed to refresh games list:', err);
+    }
     setSelectedRelease(rel);
     setIsModalOpen(true);
   };

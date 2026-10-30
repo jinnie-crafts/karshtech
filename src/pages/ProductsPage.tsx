@@ -66,9 +66,9 @@ export const ProductsPage: React.FC = () => {
     };
   }, []);
 
-  // Filtered and sorted products
+  // Filtered and sorted products (guaranteed newest-first)
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    const list = products.filter((p) => {
       // Category filter
       let matchesCategory = true;
       if (selectedCategory !== 'All') {
@@ -95,6 +95,12 @@ export const ProductsPage: React.FC = () => {
       }
 
       return matchesCategory && matchesSearch;
+    });
+
+    return list.sort((a, b) => {
+      const timeDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || '').localeCompare(a.id || '');
     });
   }, [products, selectedCategory, searchQuery]);
 

@@ -62,7 +62,13 @@ export const AdminDashboardPage: React.FC = () => {
     <AdminLayout
       title="Publishing Telemetry"
       onNewGame={() => setIsGameModalOpen(true)}
-      onNewRelease={() => setIsReleaseModalOpen(true)}
+      onNewRelease={async () => {
+        try {
+          const freshGames = await api.getAdminGames();
+          setGames(freshGames);
+        } catch {}
+        setIsReleaseModalOpen(true);
+      }}
     >
       <div className="space-y-8 max-w-7xl mx-auto">
         {/* Metric Cards */}
@@ -191,7 +197,13 @@ export const AdminDashboardPage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setIsReleaseModalOpen(true)}
+              onClick={async () => {
+                try {
+                  const freshGames = await api.getAdminGames();
+                  setGames(freshGames);
+                } catch {}
+                setIsReleaseModalOpen(true);
+              }}
               className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#242329] border border-[#39363A] text-[#F4F0E8] hover:border-[#FF5A36]/60 text-xs font-semibold uppercase tracking-[0.16em] rounded transition-all"
             >
               <UploadCloud className="w-4 h-4 text-[#FF5A36]" />

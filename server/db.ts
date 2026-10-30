@@ -267,12 +267,22 @@ class DatabaseEngine {
   }
 
   public getReleasesByGameId(gameId: string): ReleaseRecord[] {
-    return this.data.releases.filter((r) => r.game_id === gameId);
+    const game = this.getGameById(gameId) || this.getGameBySlug(gameId);
+    const targetId = game?.id || gameId;
+    const targetSlug = game?.slug;
+    return this.data.releases.filter(
+      (r) => r.game_id === targetId || (targetSlug && r.game_id === targetSlug)
+    );
   }
 
   public getLatestReleaseByGameId(gameId: string, onlyPublished = true): ReleaseRecord | undefined {
+    const game = this.getGameById(gameId) || this.getGameBySlug(gameId);
+    const targetId = game?.id || gameId;
+    const targetSlug = game?.slug;
     const releases = this.data.releases.filter(
-      (r) => r.game_id === gameId && (!onlyPublished || r.is_published)
+      (r) =>
+        (r.game_id === targetId || (targetSlug && r.game_id === targetSlug)) &&
+        (!onlyPublished || r.is_published)
     );
     return releases.sort((a, b) => b.version_code - a.version_code)[0];
   }
@@ -369,12 +379,15 @@ class DatabaseEngine {
   // Products CRUD
   public getProducts(includeDrafts: boolean = false): ProductRecord[] {
     const list = Array.isArray(this.data.products) ? [...this.data.products] : [];
+    const sorted = list.sort((a, b) => {
+      const timeDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || '').localeCompare(a.id || '');
+    });
     if (includeDrafts) {
-      return list.sort((a, b) => a.display_order - b.display_order || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return sorted;
     }
-    return list
-      .filter((p) => p.status === 'Published')
-      .sort((a, b) => a.display_order - b.display_order || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return sorted.filter((p) => p.status === 'Published');
   }
 
   public getProductById(id: string): ProductRecord | undefined {
@@ -428,9 +441,14 @@ class DatabaseEngine {
       published_at = undefined;
     }
 
+    // Explicitly protect id and created_at from mutation on update
+    const { id: _ignoreId, created_at: _ignoreCreatedAt, ...safeUpdates } = updates as any;
+
     this.data.products[idx] = {
       ...existing,
-      ...updates,
+      ...safeUpdates,
+      id: existing.id,
+      created_at: existing.created_at,
       published_at,
       updated_at: now,
     };

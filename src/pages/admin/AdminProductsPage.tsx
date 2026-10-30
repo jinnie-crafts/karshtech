@@ -44,7 +44,7 @@ export const AdminProductsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'order'>('order');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name' | 'order'>('newest');
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -125,15 +125,19 @@ export const AdminProductsPage: React.FC = () => {
     // Sort
     result.sort((a, b) => {
       if (sortBy === 'newest') {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        const timeDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        if (timeDiff !== 0) return timeDiff;
+        return (b.id || '').localeCompare(a.id || '');
       }
       if (sortBy === 'oldest') {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        if (timeDiff !== 0) return timeDiff;
+        return (a.id || '').localeCompare(b.id || '');
       }
       if (sortBy === 'name') {
         return a.name.localeCompare(b.name);
       }
-      // 'order' default: display_order ascending, then newest
+      // 'order' option: display_order ascending, then newest
       return a.display_order - b.display_order || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
@@ -284,10 +288,10 @@ export const AdminProductsPage: React.FC = () => {
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className="w-full sm:w-auto px-3 py-2 bg-[#101014] border border-[#39363A] rounded text-xs text-[#F4F0E8] focus:outline-none focus:border-[#FF5A36] cursor-pointer font-mono-code"
               >
-                <option value="order" className="bg-[#1A191F]">Sort: Display Order</option>
                 <option value="newest" className="bg-[#1A191F]">Sort: Newest First</option>
                 <option value="oldest" className="bg-[#1A191F]">Sort: Oldest First</option>
                 <option value="name" className="bg-[#1A191F]">Sort: Name (A-Z)</option>
+                <option value="order" className="bg-[#1A191F]">Sort: Display Order</option>
               </select>
             </div>
           </div>

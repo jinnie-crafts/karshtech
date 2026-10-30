@@ -279,6 +279,13 @@ app.get('/api/products', (req, res) => {
       );
     }
 
+    // Enforce descending chronological order (newest-first) across unified catalog
+    products.sort((a, b) => {
+      const timeDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
     res.json({ products });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch products' });
@@ -951,10 +958,11 @@ app.get('/api/admin/releases', requireAdmin, (_req, res) => {
   try {
     const releases = db.getReleases();
     const enriched = releases.map((r) => {
-      const game = db.getGameById(r.game_id);
+      const game = db.getGameById(r.game_id) || db.getGameBySlug(r.game_id);
       return {
         ...r,
         game_title: game?.title || 'Unknown Game',
+        game_slug: game?.slug || '',
       };
     });
     res.json({ releases: enriched });
@@ -979,19 +987,21 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
       is_published,
     } = req.body;
 
-    if (!game_id || !version_name || !apk_filename) {
+    const rawGameId = game_id || req.body.gameId;
+
+    if (!rawGameId || !version_name || !apk_filename) {
       res.status(400).json({ error: 'Game, version name, and APK file are required.' });
       return;
     }
 
-    const game = db.getGameById(game_id);
+    const game = db.getGameById(rawGameId) || db.getGameBySlug(rawGameId);
     if (!game) {
-      res.status(404).json({ error: 'Associated game does not exist.' });
+      res.status(404).json({ error: 'Associated game does not exist in Game Catalog.' });
       return;
     }
 
     const created = db.createRelease({
-      game_id,
+      game_id: game.id,
       version_name,
       version_code: Number(version_code) || 1,
       release_date: release_date || new Date().toISOString().split('T')[0],
@@ -1005,11 +1015,11 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
     });
 
     // Set download URL
-    db.updateRelease(created.id, {
+    const updated = db.updateRelease(created.id, {
       apk_download_url: `/api/releases/${created.id}/download`,
     });
 
-    res.status(201).json({ success: true, release: { ...created, apk_download_url: `/api/releases/${created.id}/download` } });
+    res.status(201).json({ success: true, release: updated || created });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1019,11 +1029,25 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
 app.put('/api/admin/releases/:id', requireAdmin, (req, res) => {
   try {
     const { id } = req.params;
-    const updated = db.updateRelease(id, req.body);
-    if (!updated) {
+    const existing = db.getReleaseById(id);
+    if (!existing) {
       res.status(404).json({ error: 'Release not found' });
       return;
     }
+
+    const updates = { ...req.body };
+    const rawGameId = updates.game_id || updates.gameId;
+    if (rawGameId) {
+      const game = db.getGameById(rawGameId) || db.getGameBySlug(rawGameId);
+      if (!game) {
+        res.status(404).json({ error: 'Associated game does not exist.' });
+        return;
+      }
+      updates.game_id = game.id;
+      delete updates.gameId;
+    }
+
+    const updated = db.updateRelease(id, updates);
     res.json({ success: true, release: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

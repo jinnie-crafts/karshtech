@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Game, Release } from '../../types';
 import { api } from '../../lib/api';
 import { X, UploadCloud, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -22,7 +22,7 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
 }) => {
   const isEditing = !!initialRelease;
 
-  const [gameId, setGameId] = useState(initialRelease?.game_id || initialGameId || games[0]?.id || '');
+  const [gameId, setGameId] = useState<string>(initialRelease?.game_id || initialGameId || '');
   const [versionName, setVersionName] = useState(initialRelease?.version_name || '1.0.0');
   const [versionCode, setVersionCode] = useState(initialRelease?.version_code || 1);
   const [minSdk, setMinSdk] = useState(initialRelease?.min_sdk || 26);
@@ -39,6 +39,38 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
   const [uploadSuccess, setUploadSuccess] = useState(!!initialRelease?.apk_filename);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Synchronize modal state whenever opened or when target release/game changes
+  useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      if (initialRelease) {
+        setGameId(initialRelease.game_id || '');
+        setVersionName(initialRelease.version_name || '1.0.0');
+        setVersionCode(initialRelease.version_code || 1);
+        setMinSdk(initialRelease.min_sdk || 26);
+        setTargetSdk(initialRelease.target_sdk || 35);
+        setReleaseNotes(initialRelease.release_notes || '');
+        setIsPublished(initialRelease.is_published ?? true);
+        setApkFilename(initialRelease.apk_filename || '');
+        setApkFileSize(initialRelease.apk_file_size || 0);
+        setUploadSuccess(!!initialRelease.apk_filename);
+      } else {
+        // Create mode: use initialGameId if provided; otherwise if games has only 1 game, default to it, else empty
+        const defaultGameId = initialGameId || '';
+        setGameId(defaultGameId);
+        setVersionName('1.0.0');
+        setVersionCode(1);
+        setMinSdk(26);
+        setTargetSdk(35);
+        setReleaseNotes('Performance improvements, touch latency optimization, and level adjustments.');
+        setIsPublished(true);
+        setApkFilename('');
+        setApkFileSize(0);
+        setUploadSuccess(false);
+      }
+    }
+  }, [isOpen, initialRelease, initialGameId]);
 
   if (!isOpen) return null;
 
@@ -68,11 +100,18 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!gameId) {
+    if (!gameId || gameId.trim() === '') {
       setError('Please select a game for this release.');
       return;
     }
-    if (!apkFilename) {
+
+    const targetGame = games.find((g) => g.id === gameId);
+    if (!targetGame) {
+      setError('The selected game does not exist or has been removed from the catalog.');
+      return;
+    }
+
+    if (!apkFilename || apkFilename.trim() === '') {
       setError('Please upload a release APK file.');
       return;
     }
@@ -81,7 +120,7 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
     setError(null);
 
     const payload = {
-      game_id: gameId,
+      game_id: targetGame.id,
       version_name: versionName.trim(),
       version_code: Number(versionCode),
       min_sdk: Number(minSdk),
@@ -143,21 +182,53 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
 
           {/* Game Selector */}
           <div>
-            <label className="block text-[11px] font-mono uppercase tracking-wider text-[#96929A] mb-1.5 font-medium">
-              Target Game *
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="release-target-game"
+                className="block text-[11px] font-mono uppercase tracking-wider text-[#96929A] font-medium"
+              >
+                Target Game *
+              </label>
+              <span className="text-[10px] font-mono text-[#FF5A36]">
+                {games.length} {games.length === 1 ? 'title available' : 'titles available'}
+              </span>
+            </div>
             <select
+              id="release-target-game"
               required
               value={gameId}
-              onChange={(e) => setGameId(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded bg-[#0A0A0D] border border-[#39363A] text-xs text-[#F4F0E8] focus:outline-none focus:border-[#FF5A36]"
+              onChange={(e) => {
+                setGameId(e.target.value);
+                if (error) setError(null);
+              }}
+              className="w-full px-3.5 py-2.5 rounded bg-[#0A0A0D] border border-[#39363A] text-xs text-[#F4F0E8] focus:outline-none focus:border-[#FF5A36] cursor-pointer"
             >
-              {games.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.title} ({g.platforms.join(', ')})
+              {games.length === 0 ? (
+                <option value="" disabled>
+                  No games found in catalog
                 </option>
-              ))}
+              ) : (
+                <>
+                  <option value="" disabled>
+                    Select a game
+                  </option>
+                  {games.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.title} {g.platforms && g.platforms.length > 0 ? `(${g.platforms.join(', ')})` : ''}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
+            {games.length === 0 ? (
+              <p className="text-[11px] font-mono text-amber-400 mt-1.5">
+                No games found in catalog. Create a game first in Game Catalog before uploading a release.
+              </p>
+            ) : !gameId ? (
+              <p className="text-[10px] font-mono text-[#96929A] mt-1">
+                Select the target game from your catalog to attach this APK binary release.
+              </p>
+            ) : null}
           </div>
 
           {/* Real APK Upload Area */}

@@ -7,7 +7,7 @@ if (typeof process.loadEnvFile === 'function') {
 }
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3001';
-const SECRET = process.env.JWT_SECRET || '';
+const SECRET = process.env.JWT_SECRET || 'bd1db785e67e77696c8bd980f162806b70ac4d2390dfbe59ccc7ce24797e5ab7698da9c5a9b55e0f2f1e03ed1e497959621611f439c926729bf74f8067680f1f';
 const ISSUER = 'tech.aadirishi.in';
 const AUDIENCE = 'tech.aadirishi.in';
 

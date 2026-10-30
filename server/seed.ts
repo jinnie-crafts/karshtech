@@ -33,26 +33,8 @@ export async function seedDatabase(): Promise<void> {
     console.log(`[Seed] Initial admin account initialized: username="${defaultUsername}", password="${defaultPassword}"`);
   }
 
-  // 2. Seed initial products if products collection is empty
-  const existingProducts = db.getProducts(true);
-  if (existingProducts.length === 0) {
-    db.createProduct({
-      name: 'Karsh Tech Digital Platform',
-      slug: 'karsh-tech-platform',
-      category: 'Web Applications',
-      short_description: 'Corporate Engineering & Autonomous Publishing Portal',
-      description: 'The core digital portal and software distribution platform for Karsh Tech. Engineered with React 19, TypeScript, hardened HS256 JWT security, atomic JSON persistence, and automated APK binary streaming.',
-      technologies: ['React 19', 'TypeScript', 'Tailwind CSS', 'Node.js', 'Express', 'JWT Security', 'Vite'],
-      cover_image: '/brand/karsh-tech-k.png',
-      gallery: ['/brand/karsh-tech-k.png'],
-      project_url: 'https://tech.aadirishi.in',
-      platform: 'Web',
-      status: 'Published',
-      featured: false,
-      display_order: 1,
-    });
-    console.log('[Seed] Initial product "Karsh Tech Digital Platform" seeded.');
-  }
+  // 2. Initial products: Products are managed dynamically via Admin Console.
+  // Bridged games (e.g. Arrow Puzzle) are automatically surfaced from Game Catalog.
 
   // 3. Check if initial game catalog seeding has already occurred
   const settings = db.getSettings();
