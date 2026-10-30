@@ -48,6 +48,33 @@ export interface GameRecord {
   updated_at: string;
 }
 
+export type ProductCategory = 'Websites' | 'Web Applications' | 'Mobile Applications' | 'Games' | 'Custom Software';
+export type ProductPlatform = 'Web' | 'Android' | 'iOS' | 'Desktop' | 'Cross-platform';
+export type ProductStatus = 'Draft' | 'Published';
+
+export interface ProductRecord {
+  id: string;
+  name: string;
+  slug: string;
+  short_description: string;
+  description: string;
+  category: ProductCategory;
+  cover_image: string;
+  gallery: string[];
+  technologies: string[];
+  project_url?: string;
+  github_url?: string;
+  play_store_url?: string;
+  apk_download_url?: string;
+  platform: ProductPlatform;
+  status: ProductStatus;
+  featured: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  published_at?: string;
+}
+
 export interface UserRecord {
   id: string;
   username: string;
@@ -62,6 +89,7 @@ export interface StudioSettings {
   contact_email: string;
   announcement?: string;
   updated_at: string;
+  initial_seeded?: boolean;
 }
 
 export interface DatabaseSchema {
@@ -69,6 +97,7 @@ export interface DatabaseSchema {
   releases: ReleaseRecord[];
   users: UserRecord[];
   settings: StudioSettings;
+  products?: ProductRecord[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
@@ -92,7 +121,11 @@ class DatabaseEngine {
     if (fs.existsSync(DB_FILE)) {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed.products)) {
+          parsed.products = [];
+        }
+        return parsed;
       } catch (err) {
         console.error('Error reading db.json, falling back to default schema', err);
       }
@@ -101,10 +134,11 @@ class DatabaseEngine {
       games: [],
       releases: [],
       users: [],
+      products: [],
       settings: {
         studio_name: 'Karsh Tech',
-        tagline: 'Crafting Next-Gen Gaming Experiences',
-        contact_email: 'contact@karshtech.com',
+        tagline: 'Turning Ideas into Digital Reality',
+        contact_email: 'karshhtech@gmail.com',
         updated_at: new Date().toISOString(),
       },
     };
@@ -161,15 +195,70 @@ class DatabaseEngine {
   }
 
   public deleteGame(id: string): boolean {
-    const initialLen = this.data.games.length;
+    const game = this.data.games.find((g) => g.id === id);
+    if (!game) return false;
+
     this.data.games = this.data.games.filter((g) => g.id !== id);
-    // Also remove associated releases
+
+    // Associated releases to remove
+    const gameReleases = this.data.releases.filter((r) => r.game_id === id);
     this.data.releases = this.data.releases.filter((r) => r.game_id !== id);
-    if (this.data.games.length !== initialLen) {
-      this.save();
-      return true;
+
+    // Clean up unreferenced APK files from disk safely
+    const uploadsDir = path.resolve(process.cwd(), 'server', 'uploads');
+    const apksDir = path.join(uploadsDir, 'apks');
+    const imagesDir = path.join(uploadsDir, 'images');
+
+    for (const rel of gameReleases) {
+      if (rel.apk_filename) {
+        const isStillUsed = this.data.releases.some((r) => r.apk_filename === rel.apk_filename);
+        if (!isStillUsed) {
+          const apkPath = path.join(apksDir, rel.apk_filename);
+          if (fs.existsSync(apkPath)) {
+            try {
+              fs.unlinkSync(apkPath);
+            } catch (err) {
+              console.warn('[DB] Warning removing APK file during game deletion:', err);
+            }
+          }
+        }
+      }
     }
-    return false;
+
+    // Clean up uploaded images if not referenced anywhere else and not protected
+    const imagesToCheck = [game.cover_image, game.banner_image, ...(game.screenshots || [])].filter(Boolean) as string[];
+    const protectedImages = new Set([
+      'default_cover.jpg',
+      'avatar_harsh.png',
+      'avatar_aditya.png',
+      'avatar_komal.png',
+    ]);
+
+    for (const imgUrl of imagesToCheck) {
+      if (typeof imgUrl === 'string' && imgUrl.startsWith('/uploads/images/')) {
+        const filename = path.basename(imgUrl);
+        if (!protectedImages.has(filename) && !filename.startsWith('avatar_')) {
+          const isReferencedByOtherGame = this.data.games.some((g) =>
+            g.cover_image === imgUrl ||
+            g.banner_image === imgUrl ||
+            g.screenshots.includes(imgUrl)
+          );
+          if (!isReferencedByOtherGame) {
+            const imgPath = path.join(imagesDir, filename);
+            if (fs.existsSync(imgPath)) {
+              try {
+                fs.unlinkSync(imgPath);
+              } catch (err) {
+                console.warn('[DB] Warning removing image file during game deletion:', err);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    this.save();
+    return true;
   }
 
   // Releases CRUD
@@ -265,6 +354,96 @@ class DatabaseEngine {
     const user = this.data.users.find((u) => u.id === id);
     if (!user) return false;
     user.password_hash = newHash;
+    this.save();
+    return true;
+  }
+
+  public updateUserUsername(id: string, newUsername: string): boolean {
+    const user = this.data.users.find((u) => u.id === id);
+    if (!user) return false;
+    user.username = newUsername;
+    this.save();
+    return true;
+  }
+
+  // Products CRUD
+  public getProducts(includeDrafts: boolean = false): ProductRecord[] {
+    const list = Array.isArray(this.data.products) ? [...this.data.products] : [];
+    if (includeDrafts) {
+      return list.sort((a, b) => a.display_order - b.display_order || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    return list
+      .filter((p) => p.status === 'Published')
+      .sort((a, b) => a.display_order - b.display_order || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+
+  public getProductById(id: string): ProductRecord | undefined {
+    if (!Array.isArray(this.data.products)) return undefined;
+    return this.data.products.find((p) => p.id === id);
+  }
+
+  public getProductBySlug(slug: string, includeDrafts: boolean = false): ProductRecord | undefined {
+    if (!Array.isArray(this.data.products)) return undefined;
+    const lower = slug.toLowerCase();
+    const product = this.data.products.find((p) => p.slug.toLowerCase() === lower);
+    if (!product) return undefined;
+    if (!includeDrafts && product.status !== 'Published') return undefined;
+    return product;
+  }
+
+  public createProduct(product: Omit<ProductRecord, 'id' | 'created_at' | 'updated_at'>): ProductRecord {
+    if (!Array.isArray(this.data.products)) {
+      this.data.products = [];
+    }
+    const id = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newProduct: ProductRecord = {
+      ...product,
+      id,
+      gallery: Array.isArray(product.gallery) ? product.gallery : [],
+      technologies: Array.isArray(product.technologies) ? product.technologies : [],
+      display_order: typeof product.display_order === 'number' ? product.display_order : 0,
+      featured: Boolean(product.featured),
+      created_at: now,
+      updated_at: now,
+      published_at: product.status === 'Published' ? now : undefined,
+    };
+    this.data.products.push(newProduct);
+    this.save();
+    return newProduct;
+  }
+
+  public updateProduct(id: string, updates: Partial<Omit<ProductRecord, 'id' | 'created_at'>>): ProductRecord | null {
+    if (!Array.isArray(this.data.products)) return null;
+    const idx = this.data.products.findIndex((p) => p.id === id);
+    if (idx === -1) return null;
+
+    const existing = this.data.products[idx];
+    const now = new Date().toISOString();
+    let published_at = existing.published_at;
+
+    if (updates.status === 'Published' && existing.status !== 'Published') {
+      published_at = now;
+    } else if (updates.status === 'Draft') {
+      published_at = undefined;
+    }
+
+    this.data.products[idx] = {
+      ...existing,
+      ...updates,
+      published_at,
+      updated_at: now,
+    };
+    this.save();
+    return this.data.products[idx];
+  }
+
+  public deleteProduct(id: string): boolean {
+    if (!Array.isArray(this.data.products)) return false;
+    const product = this.data.products.find((p) => p.id === id);
+    if (!product) return false;
+
+    this.data.products = this.data.products.filter((p) => p.id !== id);
     this.save();
     return true;
   }

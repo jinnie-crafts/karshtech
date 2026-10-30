@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, Link } from '../context/RouterContext';
 import { useAuth } from '../context/AuthContext';
-import { Menu, X, Shield, Lock, Gamepad2 } from 'lucide-react';
+import { Menu, X, Shield, Lock, Send, Layers } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const { path } = useRouter();
@@ -19,13 +19,16 @@ export const Navbar: React.FC = () => {
   }, []);
 
   const navLinks = [
-    { label: 'CATALOG', href: '/games' },
-    { label: 'STUDIO', href: '/studio' },
-    { label: 'SUPPORT', href: '/support' },
+    { label: 'SERVICES', href: '/services' },
+    { label: 'PRODUCTS', href: '/products' },
+    { label: 'GAMES', href: '/games' },
+    { label: 'ABOUT', href: '/studio' },
+    { label: 'CONTACT', href: '/contact' },
   ];
 
   const isActive = (href: string) => {
     if (href === '/') return path === '/';
+    if (href === '/products') return path.startsWith('/products') || path.startsWith('/portfolio') || path.startsWith('/projects');
     return path.startsWith(href);
   };
 
@@ -42,7 +45,7 @@ export const Navbar: React.FC = () => {
         <Link href="/" className="group flex items-center space-x-3 z-20" title="Karsh Tech Home">
           <div className="relative w-8 h-8 flex items-center justify-center">
             <img
-              src="/logo.svg"
+              src="/brand/karsh-tech-k.png"
               alt="Karsh Tech Logo"
               className="w-8 h-8 object-contain transition-transform duration-300 group-hover:scale-105"
             />
@@ -51,14 +54,14 @@ export const Navbar: React.FC = () => {
             <span className="font-display text-base font-bold tracking-[0.14em] uppercase text-[#F4F0E8] group-hover:text-[#FF5A36] transition-colors">
               KARSH <span className="text-[#FF5A36]">TECH</span>
             </span>
-            <span className="text-[9px] font-semibold tracking-[0.22em] uppercase text-[#96929A] -mt-1">
-              GAME PUBLISHER
+            <span className="text-[9px] font-semibold tracking-[0.2em] uppercase text-[#96929A] -mt-1">
+              TECHNOLOGY &amp; DIGITAL PRODUCTS
             </span>
           </div>
         </Link>
 
-        {/* Desktop Navigation Links (Editorial Minimalist) */}
-        <nav className="hidden md:flex items-center space-x-8 text-xs tracking-[0.16em] font-semibold uppercase text-[#C2BEC1]">
+        {/* Desktop Navigation Links */}
+        <nav className="hidden md:flex items-center space-x-7 text-xs tracking-[0.16em] font-semibold uppercase text-[#C2BEC1]">
           {navLinks.map((item) => {
             const active = isActive(item.href);
             return (
@@ -81,11 +84,11 @@ export const Navbar: React.FC = () => {
         {/* Right Action Buttons */}
         <div className="hidden md:flex items-center space-x-3 z-20">
           <Link
-            href="/games/arrow-puzzle"
+            href="/contact"
             className="flex items-center space-x-2 text-xs tracking-[0.14em] font-bold uppercase py-2 px-3.5 rounded bg-[#1A191F] border border-[#39363A] hover:border-[#FF5A36] text-[#F4F0E8] hover:text-[#FF5A36] transition-all duration-200"
           >
-            <Gamepad2 className="w-3.5 h-3.5 text-[#FF5A36]" />
-            <span>PLAY ARROW PUZZLE</span>
+            <Send className="w-3.5 h-3.5 text-[#FF5A36]" />
+            <span>DISCUSS PROJECT</span>
           </Link>
 
           {user ? (
@@ -145,12 +148,21 @@ export const Navbar: React.FC = () => {
 
               <div className="pt-3 flex flex-col space-y-2.5">
                 <Link
-                  href="/games/arrow-puzzle"
+                  href="/contact"
                   onClick={() => setMobileOpen(false)}
                   className="flex items-center justify-center space-x-2 py-3 rounded border border-[#39363A] bg-[#1A191F] text-[#F4F0E8] hover:border-[#FF5A36] text-xs tracking-[0.14em] font-bold uppercase"
                 >
-                  <Gamepad2 className="w-4 h-4 text-[#FF5A36]" />
-                  <span>PLAY ARROW PUZZLE</span>
+                  <Send className="w-4 h-4 text-[#FF5A36]" />
+                  <span>DISCUSS A PROJECT</span>
+                </Link>
+
+                <Link
+                  href="/products"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center justify-center space-x-2 py-3 rounded border border-[#39363A] bg-[#242329] text-[#C2BEC1] text-xs tracking-[0.14em] font-semibold uppercase"
+                >
+                  <Layers className="w-4 h-4 text-[#FF5A36]" />
+                  <span>VIEW ALL PRODUCTS</span>
                 </Link>
 
                 {user ? (

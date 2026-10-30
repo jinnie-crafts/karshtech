@@ -56,9 +56,39 @@ export interface User {
   role: 'superadmin' | 'admin';
 }
 
+export type ProductCategory = 'Websites' | 'Web Applications' | 'Mobile Applications' | 'Games' | 'Custom Software';
+export type ProductPlatform = 'Web' | 'Android' | 'iOS' | 'Desktop' | 'Cross-platform';
+export type ProductStatus = 'Draft' | 'Published';
+
+export interface Product {
+  id: string;
+  name: string;
+  slug: string;
+  short_description: string;
+  description: string;
+  category: ProductCategory;
+  cover_image: string;
+  gallery?: string[];
+  technologies: string[];
+  project_url?: string;
+  github_url?: string;
+  play_store_url?: string;
+  apk_download_url?: string;
+  platform: ProductPlatform;
+  status: ProductStatus;
+  featured: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  published_at?: string;
+}
+
 export interface DashboardStats {
   total_games: number;
   published_games: number;
   total_releases: number;
   total_downloads: number;
+  total_products?: number;
+  published_products?: number;
+  draft_products?: number;
 }

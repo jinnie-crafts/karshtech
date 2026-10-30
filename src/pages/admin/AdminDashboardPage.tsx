@@ -14,6 +14,7 @@ import {
   Plus,
   ArrowRight,
   Sparkles,
+  Package,
 } from 'lucide-react';
 
 export const AdminDashboardPage: React.FC = () => {
@@ -65,8 +66,26 @@ export const AdminDashboardPage: React.FC = () => {
     >
       <div className="space-y-8 max-w-7xl mx-auto">
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Games */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Card 1: Products */}
+          <div className="p-5 bg-[#1A191F] border border-[#39363A] rounded-md transition-colors hover:border-[#FF5A36]/40">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-[0.2em] font-semibold text-[#96929A]">
+                Digital Products
+              </span>
+              <div className="p-2 rounded bg-[#242329] text-[#F4F0E8] border border-[#39363A]">
+                <Package className="w-4 h-4 text-[#FF5A36]" />
+              </div>
+            </div>
+            <div className="font-display text-3xl font-bold text-[#F4F0E8] mt-3 tracking-tight">
+              {stats?.total_products ?? 0}
+            </div>
+            <div className="text-[11px] tracking-wider text-[#96929A] mt-1 font-mono">
+              {stats?.published_products ?? 0} published live
+            </div>
+          </div>
+
+          {/* Card 2: Games */}
           <div className="p-5 bg-[#1A191F] border border-[#39363A] rounded-md transition-colors hover:border-[#FF5A36]/40">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-[0.2em] font-semibold text-[#96929A]">
@@ -84,7 +103,7 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 2: Releases */}
+          {/* Card 3: Releases */}
           <div className="p-5 bg-[#1A191F] border border-[#39363A] rounded-md transition-colors hover:border-[#FF5A36]/40">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-[0.2em] font-semibold text-[#96929A]">
@@ -102,7 +121,7 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 3: Downloads */}
+          {/* Card 4: Downloads */}
           <div className="p-5 bg-[#1A191F] border border-[#39363A] rounded-md transition-colors hover:border-[#FF5A36]/40">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-[0.2em] font-semibold text-[#96929A]">
@@ -120,7 +139,7 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Card 4: Security */}
+          {/* Card 5: Security */}
           <div className="p-5 bg-[#1A191F] border border-[#39363A] rounded-md transition-colors hover:border-[#FF5A36]/40">
             <div className="flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-[0.2em] font-semibold text-[#96929A]">
@@ -154,18 +173,26 @@ export const AdminDashboardPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <button
-              onClick={() => setIsGameModalOpen(true)}
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <Link
+              href="/admin/products"
               className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#FF5A36] text-[#101014] font-bold text-xs uppercase tracking-[0.16em] rounded transition-all hover:brightness-110 active:scale-95 shadow-[0_2px_12px_rgba(255,90,54,0.3)]"
             >
-              <Plus className="w-4 h-4" />
+              <Package className="w-4 h-4" />
+              <span>Products Console</span>
+            </Link>
+
+            <button
+              onClick={() => setIsGameModalOpen(true)}
+              className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#242329] border border-[#39363A] text-[#F4F0E8] hover:border-[#FF5A36]/60 text-xs font-semibold uppercase tracking-[0.16em] rounded transition-all"
+            >
+              <Plus className="w-4 h-4 text-[#FF5A36]" />
               <span>Create Game</span>
             </button>
 
             <button
               onClick={() => setIsReleaseModalOpen(true)}
-              className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#242329] border border-[#39363A] text-[#F4F0E8] hover:border-[#FF5A36]/60 text-xs font-semibold uppercase tracking-[0.16em] rounded transition-all"
+              className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#242329] border border-[#39363A] text-[#F4F0E8] hover:border-[#FF5A36]/60 text-xs font-semibold uppercase tracking-[0.16em] rounded transition-all"
             >
               <UploadCloud className="w-4 h-4 text-[#FF5A36]" />
               <span>Deploy APK</span>

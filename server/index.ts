@@ -29,16 +29,50 @@ const APKS_DIR = path.join(UPLOADS_DIR, 'apks');
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
 fs.mkdirSync(APKS_DIR, { recursive: true });
 
+// Allowed origins for CORS and CSRF protection
+const ALLOWED_ORIGINS = [
+  'https://tech.aadirishi.in',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+];
+
 // Middleware
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server)
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS policy: Origin not allowed'));
+      }
+    },
     credentials: true,
   })
 );
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// CSRF validation for state-changing administrative requests
+app.use('/api/admin', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    // If request has Authorization Bearer header, CSRF is mitigated
+    if (req.headers.authorization?.startsWith('Bearer ')) {
+      return next();
+    }
+    // If relying on cookies, verify Origin/Referer
+    const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+      res.status(403).json({ error: 'Forbidden: Cross-site request rejected (CSRF protection)' });
+      return;
+    }
+  }
+  next();
+});
 
 // Static file serving for uploads
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -185,6 +219,117 @@ app.get('/api/games/:slug', (req, res) => {
   }
 });
 
+// GET /api/products - Public products catalog (published only)
+app.get('/api/products', (req, res) => {
+  try {
+    let products = db.getProducts(false); // Published only
+    const { category, search, featured, include_games } = req.query;
+
+    // Bridge published games into unified products catalog under 'Games' category
+    if (include_games !== 'false') {
+      const publishedGames = db.getGames().filter((g) => g.status === 'Available' || g.status === 'Updated');
+      for (const g of publishedGames) {
+        const alreadyExists = products.some((p) => p.slug.toLowerCase() === g.slug.toLowerCase());
+        if (!alreadyExists) {
+          const latestRelease = db.getLatestReleaseByGameId(g.id, true);
+          products.push({
+            id: g.id,
+            name: g.title,
+            slug: g.slug,
+            short_description: g.tagline || 'Native Android Interactive Game',
+            description: g.description,
+            category: 'Games',
+            cover_image: g.cover_image || '/uploads/images/default_cover.jpg',
+            gallery: g.screenshots || [],
+            technologies: ['Android SDK', 'Kotlin', 'Jetpack Compose', 'Preferences DataStore'],
+            project_url: `/games/${g.slug}`,
+            apk_download_url: latestRelease?.apk_download_url,
+            platform: 'Android',
+            status: 'Published',
+            featured: g.featured,
+            display_order: 10,
+            created_at: g.created_at,
+            updated_at: g.updated_at,
+            published_at: g.created_at,
+          });
+        }
+      }
+    }
+
+    // Filter by category
+    if (category && typeof category === 'string' && category !== 'All') {
+      products = products.filter((p) => p.category.toLowerCase() === category.toLowerCase());
+    }
+
+    // Filter by featured
+    if (featured === 'true') {
+      products = products.filter((p) => p.featured);
+    }
+
+    // Filter by search
+    if (search && typeof search === 'string') {
+      const q = search.toLowerCase();
+      products = products.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.slug.toLowerCase().includes(q) ||
+          p.short_description.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.technologies.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+
+    res.json({ products });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch products' });
+  }
+});
+
+// GET /api/products/:slug - Public product details
+app.get('/api/products/:slug', (req, res) => {
+  try {
+    const { slug } = req.params;
+    let product = db.getProductBySlug(slug, false);
+
+    // If not in products collection, check if it's a published game
+    if (!product) {
+      const game = db.getGameBySlug(slug);
+      if (game && (game.status === 'Available' || game.status === 'Updated')) {
+        const latestRelease = db.getLatestReleaseByGameId(game.id, true);
+        product = {
+          id: game.id,
+          name: game.title,
+          slug: game.slug,
+          short_description: game.tagline || 'Native Android Interactive Game',
+          description: game.description,
+          category: 'Games',
+          cover_image: game.cover_image || '/uploads/images/default_cover.jpg',
+          gallery: game.screenshots || [],
+          technologies: ['Android SDK', 'Kotlin', 'Jetpack Compose', 'Preferences DataStore'],
+          project_url: `/games/${game.slug}`,
+          apk_download_url: latestRelease?.apk_download_url,
+          platform: 'Android',
+          status: 'Published',
+          featured: game.featured,
+          display_order: 10,
+          created_at: game.created_at,
+          updated_at: game.updated_at,
+          published_at: game.created_at,
+        };
+      }
+    }
+
+    if (!product) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+
+    res.json({ product });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch product details' });
+  }
+});
+
 // GET /api/releases/:id/download - Stream/download release APK
 app.get('/api/releases/:id/download', (req, res) => {
   try {
@@ -226,6 +371,7 @@ app.get('/api/stats', (_req, res) => {
   try {
     const games = db.getGames();
     const releases = db.getReleases();
+    const products = db.getProducts(true);
     const totalDownloads = releases.reduce((sum, r) => sum + (r.download_count || 0), 0);
 
     res.json({
@@ -234,6 +380,9 @@ app.get('/api/stats', (_req, res) => {
         available_games: games.filter((g) => g.status === 'Available').length,
         total_releases: releases.filter((r) => r.is_published).length,
         total_downloads: totalDownloads,
+        total_products: products.length,
+        published_products: products.filter((p) => p.status === 'Published').length,
+        draft_products: products.filter((p) => p.status === 'Draft').length,
       },
       settings: db.getSettings(),
     });
@@ -242,16 +391,138 @@ app.get('/api/stats', (_req, res) => {
   }
 });
 
-// POST /api/support - Contact and issue reporting
-app.post('/api/support', (req, res) => {
-  const { name, email, game, subject, message } = req.body;
+// POST /api/support and /api/contact - Inquiries, Contact and Support
+app.post(['/api/support', '/api/contact'], (req, res) => {
+  const { name, email, category, game, subject, message } = req.body;
   if (!name || !email || !message) {
     res.status(400).json({ error: 'Name, email, and message are required.' });
     return;
   }
-  // In production, send via SendGrid / Resend / Mailgun.
-  console.log(`[Support Ticket] From: ${name} <${email}> | Game: ${game || 'General'} | Subject: ${subject}`);
-  res.json({ success: true, message: 'Your message has been received. Our team will review it shortly.' });
+  const topic = category || game || 'General Inquiry';
+  console.log(`[Contact / Support] From: ${name} <${email}> | Topic: ${topic} | Subject: ${subject || 'No Subject'}`);
+  res.json({ success: true, message: 'Your transmission has been received by Karsh Tech. Our team will review it and reply shortly.' });
+});
+
+// ==========================================
+// SEO / GEO / AEO DISCOVERY ENDPOINTS
+// ==========================================
+const DOMAIN = process.env.PRODUCTION_DOMAIN || 'https://tech.aadirishi.in';
+
+// GET /sitemap.xml - Dynamic XML Sitemap
+app.get('/sitemap.xml', (_req, res) => {
+  const games = db.getGames();
+  interface SitemapEntry {
+    loc: string;
+    priority: string;
+    changefreq: string;
+    lastmod?: string;
+  }
+
+  const staticUrls: SitemapEntry[] = [
+    { loc: `${DOMAIN}/`, priority: '1.0', changefreq: 'daily' },
+    { loc: `${DOMAIN}/products`, priority: '0.9', changefreq: 'weekly' },
+    { loc: `${DOMAIN}/services`, priority: '0.9', changefreq: 'weekly' },
+    { loc: `${DOMAIN}/portfolio`, priority: '0.8', changefreq: 'weekly' },
+    { loc: `${DOMAIN}/games`, priority: '0.8', changefreq: 'weekly' },
+    { loc: `${DOMAIN}/studio`, priority: '0.8', changefreq: 'weekly' },
+    { loc: `${DOMAIN}/contact`, priority: '0.8', changefreq: 'monthly' },
+    { loc: `${DOMAIN}/support`, priority: '0.7', changefreq: 'monthly' },
+    { loc: `${DOMAIN}/privacy`, priority: '0.5', changefreq: 'monthly' },
+    { loc: `${DOMAIN}/terms`, priority: '0.5', changefreq: 'monthly' },
+  ];
+
+  const publishedProducts = db.getProducts(false);
+  const productUrls: SitemapEntry[] = publishedProducts.map((p) => ({
+    loc: `${DOMAIN}/products/${encodeURIComponent(p.slug)}`,
+    lastmod: (p.updated_at || p.created_at || new Date().toISOString()).split('T')[0],
+    priority: '0.8',
+    changefreq: 'weekly',
+  }));
+
+  const gameUrls: SitemapEntry[] = games.map((game) => ({
+    loc: `${DOMAIN}/games/${encodeURIComponent(game.slug)}`,
+    lastmod: (game.updated_at || game.created_at || new Date().toISOString()).split('T')[0],
+    priority: '0.8',
+    changefreq: 'weekly',
+  }));
+
+  const allUrls = [...staticUrls, ...productUrls, ...gameUrls];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${allUrls
+  .map(
+    (u) => `  <url>
+    <loc>${u.loc}</loc>
+    ${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}
+    <changefreq>${u.changefreq}</changefreq>
+    <priority>${u.priority}</priority>
+  </url>`
+  )
+  .join('\n')}
+</urlset>`;
+
+  res.header('Content-Type', 'application/xml');
+  res.send(xml);
+});
+
+// GET /robots.txt
+app.get('/robots.txt', (_req, res) => {
+  const robots = `User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/admin
+Disallow: /api/admin/
+Disallow: /api/auth
+Disallow: /api/auth/
+
+Sitemap: ${DOMAIN}/sitemap.xml
+`;
+  res.header('Content-Type', 'text/plain');
+  res.send(robots);
+});
+
+// GET /llms.txt - Generative Engine Optimization (GEO) Knowledge Document
+app.get('/llms.txt', (_req, res) => {
+  const games = db.getGames();
+  const gamesList = games
+    .map(
+      (g) =>
+        `- **${g.title}**: ${g.tagline || g.description} (Category: Games / Mobile | Platforms: ${g.platforms.join(', ')} | Status: ${g.status} | URL: ${DOMAIN}/games/${g.slug})`
+    )
+    .join('\n');
+
+  const content = `# Karsh Tech
+> Technology & Digital Product Development Organization
+
+- **Website**: ${DOMAIN}
+- **Official Contact**: karshhtech@gmail.com
+- **Organization Identity**: Karsh Tech is an independent technology organization that creates modern websites, web applications, mobile applications, interactive games, and custom software solutions.
+- **Flagship Products**: Arrow Puzzle (native Android spatial logic game) and Karsh Tech Platform (autonomous technology publishing portal).
+
+## Services & Core Disciplines
+- **Websites**: Modern, responsive, high-performance websites for businesses, creators, and digital brands.
+- **Web Applications**: Interactive platforms, client portals, SaaS dashboards, and browser-based systems built with modern reactive architectures.
+- **Mobile Applications**: Native and responsive Android applications engineered with Kotlin, Jetpack Compose, and sub-16ms latency.
+- **Game Development**: Distraction-free, mindful games featuring deterministic spatial logic, algorithmic solvability guarantees, and zero telemetry bloat.
+- **Custom Software**: Purpose-built desktop tools, developer utilities, automated operational workflows, and robust backend APIs.
+
+## Products & Portfolio
+${gamesList || '- Arrow Puzzle: Native Android spatial logic puzzle game.'}
+
+## Primary Resources & Navigation
+- Official Portal: ${DOMAIN}
+- Services Overview: ${DOMAIN}/services
+- Portfolio & Projects: ${DOMAIN}/portfolio
+- Games Catalog: ${DOMAIN}/games
+- About Karsh Tech: ${DOMAIN}/studio
+- Contact Us: ${DOMAIN}/contact
+- Support & FAQ: ${DOMAIN}/support
+- Privacy Policy: ${DOMAIN}/privacy
+- Terms of Service: ${DOMAIN}/terms
+`;
+  res.header('Content-Type', 'text/plain; charset=utf-8');
+  res.send(content);
 });
 
 // ==========================================
@@ -372,6 +643,7 @@ app.get('/api/admin/stats', requireAdmin, (_req, res) => {
   try {
     const games = db.getGames();
     const releases = db.getReleases();
+    const products = db.getProducts(true);
     const totalDownloads = releases.reduce((sum, r) => sum + (r.download_count || 0), 0);
 
     res.json({
@@ -380,6 +652,9 @@ app.get('/api/admin/stats', requireAdmin, (_req, res) => {
         published_games: games.filter((g) => g.status === 'Available' || g.status === 'Updated').length,
         total_releases: releases.length,
         total_downloads: totalDownloads,
+        total_products: products.length,
+        published_products: products.filter((p) => p.status === 'Published').length,
+        draft_products: products.filter((p) => p.status === 'Draft').length,
       },
       recent_releases: releases
         .slice(-5)
@@ -391,6 +666,7 @@ app.get('/api/admin/stats', requireAdmin, (_req, res) => {
             game_title: game?.title || 'Unknown Game',
           };
         }),
+      recent_products: products.slice(0, 5),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -500,6 +776,173 @@ app.delete('/api/admin/games/:id', requireAdmin, (req, res) => {
     res.json({ success: true, message: 'Game and associated releases deleted.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// ADMIN PRODUCTS ENDPOINTS
+// ==========================================
+
+// GET /api/admin/products
+app.get('/api/admin/products', requireAdmin, (_req, res) => {
+  try {
+    const products = db.getProducts(true);
+    res.json({ products });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch admin products' });
+  }
+});
+
+// GET /api/admin/products/:id
+app.get('/api/admin/products/:id', requireAdmin, (req, res) => {
+  try {
+    const product = db.getProductById(req.params.id);
+    if (!product) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+    res.json({ product });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch product' });
+  }
+});
+
+// POST /api/admin/products
+app.post('/api/admin/products', requireAdmin, (req, res) => {
+  try {
+    const {
+      name,
+      slug,
+      short_description,
+      description,
+      category,
+      cover_image,
+      gallery,
+      technologies,
+      project_url,
+      github_url,
+      play_store_url,
+      apk_download_url,
+      platform,
+      status,
+      featured,
+      display_order,
+    } = req.body;
+
+    if (!name || !description || !category) {
+      res.status(400).json({ error: 'Name, description, and category are required' });
+      return;
+    }
+
+    const generatedSlug = slug
+      ? slug.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-')
+      : name.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+
+    const existing = db.getProductBySlug(generatedSlug, true);
+    if (existing) {
+      res.status(400).json({ error: `A product with slug "${generatedSlug}" already exists` });
+      return;
+    }
+
+    const newProduct = db.createProduct({
+      name: name.trim(),
+      slug: generatedSlug,
+      short_description: short_description ? short_description.trim() : '',
+      description: description.trim(),
+      category,
+      cover_image: cover_image || '/brand/karsh-tech-k.png',
+      gallery: Array.isArray(gallery) ? gallery : [],
+      technologies: Array.isArray(technologies) ? technologies : [],
+      project_url: project_url ? project_url.trim() : undefined,
+      github_url: github_url ? github_url.trim() : undefined,
+      play_store_url: play_store_url ? play_store_url.trim() : undefined,
+      apk_download_url: apk_download_url ? apk_download_url.trim() : undefined,
+      platform: platform || 'Web',
+      status: status || 'Draft',
+      featured: Boolean(featured),
+      display_order: Number(display_order) || 0,
+    });
+
+    res.status(201).json({ success: true, product: newProduct });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create product' });
+  }
+});
+
+// PUT /api/admin/products/:id
+app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = db.getProductById(id);
+    if (!existing) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+
+    const updates = { ...req.body };
+    if (updates.slug && updates.slug !== existing.slug) {
+      const slugCheck = db.getProductBySlug(updates.slug, true);
+      if (slugCheck && slugCheck.id !== id) {
+        res.status(400).json({ error: `A product with slug "${updates.slug}" already exists` });
+        return;
+      }
+    }
+
+    const updated = db.updateProduct(id, updates);
+    res.json({ success: true, product: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update product' });
+  }
+});
+
+// DELETE /api/admin/products/:id
+app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = db.deleteProduct(id);
+    if (!success) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+    res.json({ success: true, message: 'Product deleted successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete product' });
+  }
+});
+
+// PATCH /api/admin/products/:id/status
+app.patch('/api/admin/products/:id/status', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (status !== 'Draft' && status !== 'Published') {
+      res.status(400).json({ error: 'Status must be Draft or Published' });
+      return;
+    }
+    const updated = db.updateProduct(id, { status });
+    if (!updated) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+    res.json({ success: true, product: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update product status' });
+  }
+});
+
+// PATCH /api/admin/products/:id/featured
+app.patch('/api/admin/products/:id/featured', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { featured } = req.body;
+    const updated = db.updateProduct(id, { featured: Boolean(featured) });
+    if (!updated) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+    res.json({ success: true, product: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update product featured status' });
   }
 });
 

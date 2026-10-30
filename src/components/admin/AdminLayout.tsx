@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   Plus,
+  Package,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -19,6 +20,7 @@ interface AdminLayoutProps {
   title: string;
   onNewGame?: () => void;
   onNewRelease?: () => void;
+  onNewProduct?: () => void;
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({
@@ -26,6 +28,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   title,
   onNewGame,
   onNewRelease,
+  onNewProduct,
 }) => {
   const { path, navigate } = useRouter();
   const { user, loading, logout } = useAuth();
@@ -41,6 +44,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   const menuItems = [
     { label: 'Overview', href: '/admin', icon: LayoutDashboard },
+    { label: 'Products', href: '/admin/products', icon: Package },
     { label: 'Game Catalog', href: '/admin/games', icon: Gamepad2 },
     { label: 'Releases & APKs', href: '/admin/releases', icon: UploadCloud },
     { label: 'Studio Settings', href: '/admin/settings', icon: Settings },
@@ -63,13 +67,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         <div className="space-y-6">
           {/* Brand */}
           <div className="flex items-center gap-3 px-1">
-            <img src="/logo.svg" alt="Karsh Tech" className="w-7 h-7 object-contain" />
+            <img src="/brand/karsh-tech-k.png" alt="Karsh Tech Logo" className="w-7 h-7 object-contain" />
             <div>
               <div className="font-display font-bold text-base tracking-wider uppercase text-[#F4F0E8]">
                 KARSH <span className="text-[#FF5A36]">TECH</span>
               </div>
               <div className="text-[9px] uppercase tracking-[0.2em] font-semibold text-[#96929A]">
-                PUBLISHING CONSOLE
+                STUDIO &amp; CONSOLE
               </div>
             </div>
           </div>
@@ -134,10 +138,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            {onNewProduct && (
+              <button
+                onClick={onNewProduct}
+                className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded bg-[#FF5A36] hover:bg-[#FF7454] text-[#101014] text-xs font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>New Product</span>
+              </button>
+            )}
+
             {onNewGame && (
               <button
                 onClick={onNewGame}
-                className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded bg-[#FF5A36] hover:bg-[#FF7454] text-[#101014] text-xs font-bold uppercase tracking-wider transition-colors shadow-sm"
+                className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded bg-[#FF5A36] hover:bg-[#FF7454] text-[#101014] text-xs font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>New Game</span>
@@ -158,7 +172,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               <div className="w-7 h-7 rounded-full bg-[#242329] text-[#FF5A36] border border-[#39363A] flex items-center justify-center font-bold">
                 <Shield className="w-3.5 h-3.5" />
               </div>
-              <span className="hidden md:inline uppercase text-xs font-bold text-[#F4F0E8]">{user?.username || 'admin'}</span>
+              <span className="hidden md:inline uppercase text-xs font-bold text-[#F4F0E8]">{user?.username || 'khrgosh'}</span>
             </div>
           </div>
         </header>

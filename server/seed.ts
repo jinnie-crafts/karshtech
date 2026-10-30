@@ -14,20 +14,54 @@ export async function seedDatabase(): Promise<void> {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
   fs.mkdirSync(APKS_DIR, { recursive: true });
 
-  // 1. Seed Default Admin User if no users exist
+  // 1. Seed or Migrate Admin User
+  const defaultUsername = process.env.ADMIN_USERNAME || 'khrgosh';
+  const defaultPassword = process.env.ADMIN_PASSWORD || 'KarshTechAdmin2026!';
   const existingUsers = db.getUsers();
-  if (existingUsers.length === 0) {
-    const defaultPassword = process.env.ADMIN_PASSWORD || 'KarshTechAdmin2026!';
+
+  const oldAdmin = existingUsers.find((u) => u.username.toLowerCase() === 'admin');
+  if (oldAdmin) {
+    db.updateUserUsername(oldAdmin.id, defaultUsername);
+    console.log(`[Seed] Migrated admin account username to "${defaultUsername}" (id: ${oldAdmin.id})`);
+  } else if (existingUsers.length === 0) {
     const passwordHash = await hashPassword(defaultPassword);
     db.createUser({
-      username: 'admin',
+      username: defaultUsername,
       password_hash: passwordHash,
       role: 'superadmin',
     });
-    console.log(`[Seed] Initial admin account initialized: username="admin", password="${defaultPassword}"`);
+    console.log(`[Seed] Initial admin account initialized: username="${defaultUsername}", password="${defaultPassword}"`);
   }
 
-  // 2. Check if Arrow Puzzle exists
+  // 2. Seed initial products if products collection is empty
+  const existingProducts = db.getProducts(true);
+  if (existingProducts.length === 0) {
+    db.createProduct({
+      name: 'Karsh Tech Digital Platform',
+      slug: 'karsh-tech-platform',
+      category: 'Web Applications',
+      short_description: 'Corporate Engineering & Autonomous Publishing Portal',
+      description: 'The core digital portal and software distribution platform for Karsh Tech. Engineered with React 19, TypeScript, hardened HS256 JWT security, atomic JSON persistence, and automated APK binary streaming.',
+      technologies: ['React 19', 'TypeScript', 'Tailwind CSS', 'Node.js', 'Express', 'JWT Security', 'Vite'],
+      cover_image: '/brand/karsh-tech-k.png',
+      gallery: ['/brand/karsh-tech-k.png'],
+      project_url: 'https://tech.aadirishi.in',
+      platform: 'Web',
+      status: 'Published',
+      featured: false,
+      display_order: 1,
+    });
+    console.log('[Seed] Initial product "Karsh Tech Digital Platform" seeded.');
+  }
+
+  // 3. Check if initial game catalog seeding has already occurred
+  const settings = db.getSettings();
+  if (settings.initial_seeded) {
+    // Database has already completed initial seeding. Never resurrect intentionally deleted games.
+    return;
+  }
+
+  // 4. Seed Arrow Puzzle for initial first-time catalog setup
   const existingArrow = db.getGameBySlug('arrow-puzzle');
   if (!existingArrow) {
     console.log('[Seed] Seeding Arrow Puzzle with verified assets...');
@@ -157,4 +191,7 @@ export async function seedDatabase(): Promise<void> {
 
     console.log(`[Seed] Arrow Puzzle v1.0.0 seeded successfully with release ID: ${release.id}`);
   }
+
+  // Mark initial seeding complete to protect subsequent deletions across restarts
+  db.updateSettings({ initial_seeded: true });
 }

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/admin
+Disallow: /api/admin/
+Disallow: /api/auth
+Disallow: /api/auth/
+
+Sitemap: https://tech.aadirishi.in/sitemap.xml

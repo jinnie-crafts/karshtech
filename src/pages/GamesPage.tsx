@@ -1,32 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Game } from '../types';
-import { api } from '../lib/api';
+import { useGames } from '../context/GamesContext';
 import { GameCard } from '../components/GameCard';
 import { Search, Filter, X, RefreshCw, Gamepad2 } from 'lucide-react';
 
 export const GamesPage: React.FC = () => {
-  const [games, setGames] = useState<Game[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { games, loading, refreshGames } = useGames();
   const [search, setSearch] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
-
-  useEffect(() => {
-    async function fetchGames() {
-      try {
-        setLoading(true);
-        const data = await api.getGames();
-        setGames(data);
-      } catch (err) {
-        console.error('Failed to load games', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchGames();
-  }, []);
 
   const availableGenres = useMemo(() => {
     const set = new Set<string>();
@@ -79,17 +62,16 @@ export const GamesPage: React.FC = () => {
         <div className="flex items-center space-x-2.5 mb-2.5">
           <span className="w-2 h-2 rounded-full bg-[#FF5A36]" />
           <span className="text-xs font-bold tracking-[0.16em] uppercase text-[#F4F0E8] font-display">
-            STUDIO RELEASES // PUBLIC ARCHIVE
+            KARSH TECH PRODUCTS // GAMES &amp; INTERACTIVE RELEASES
           </span>
         </div>
 
         <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight uppercase text-[#F4F0E8] leading-tight">
-          GAME CATALOG &amp; <span className="text-[#FF5A36]">ARCHIVE</span>
+          GAMES CATALOG &amp; <span className="text-[#FF5A36]">RELEASES</span>
         </h1>
 
         <p className="text-xs sm:text-sm text-[#C2BEC1] mt-2 max-w-xl leading-relaxed">
-          Explore all official games developed and published by Karsh Tech. Download signed release APKs,
-          read release changelogs, and inspect mechanical specifications.
+          Explore interactive titles developed by Karsh Tech. Games represent one dedicated category within our digital product portfolio. Download verified release APKs, inspect specifications, and experience mindful gameplay.
         </p>
       </div>
 

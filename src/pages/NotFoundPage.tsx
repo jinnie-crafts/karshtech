@@ -23,7 +23,7 @@ export const NotFoundPage: React.FC = () => {
           </h1>
 
           <p className="text-xs sm:text-sm text-[#C2BEC1] mb-7 leading-relaxed max-w-sm">
-            The studio resource or catalog link you requested does not exist or has been shifted in our distribution network.
+            The digital resource or route you requested does not exist or has been shifted in our network.
           </p>
 
           <Link
@@ -31,7 +31,7 @@ export const NotFoundPage: React.FC = () => {
             className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded bg-[#FF5A36] hover:bg-[#FF7454] text-[#101014] font-bold text-xs uppercase tracking-wider transition-colors shadow-md shadow-[#FF5A36]/20"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Return to Studio Home</span>
+            <span>Return to Karsh Tech Home</span>
           </Link>
         </div>
       </div>

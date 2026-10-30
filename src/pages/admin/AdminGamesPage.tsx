@@ -3,6 +3,7 @@ import type { Game } from '../../types';
 import { api } from '../../lib/api';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { GameFormModal } from '../../components/admin/GameFormModal';
+import { DeleteConfirmModal } from '../../components/admin/DeleteConfirmModal';
 import { ToastContainer, type ToastMessage } from '../../components/admin/Toast';
 import { AnimatedBadge } from '../../components/AnimatedBadge';
 import { Link } from '../../context/RouterContext';
@@ -22,9 +23,11 @@ export const AdminGamesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  // Modal
+  // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [gameToDelete, setGameToDelete] = useState<Game | null>(null);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -62,22 +65,9 @@ export const AdminGamesPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (game: Game) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete "${game.title}" and all its release records? This action cannot be undone.`
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await api.deleteGame(game.id);
-      showToast('success', `"${game.title}" was deleted.`);
-      loadGames();
-    } catch (err: any) {
-      showToast('error', err.message || 'Delete failed.');
-    }
+  const handleDelete = (game: Game) => {
+    setGameToDelete(game);
+    setDeleteModalOpen(true);
   };
 
   const filteredGames = games.filter(
@@ -252,6 +242,23 @@ export const AdminGamesPage: React.FC = () => {
             selectedGame ? 'Game updated successfully!' : 'Game created successfully!'
           );
           loadGames();
+        }}
+      />
+
+      {/* Game Permanent Deletion Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteModalOpen}
+        game={gameToDelete}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setGameToDelete(null);
+        }}
+        onSuccess={(title) => {
+          showToast('success', `"${title}" and all associated releases were permanently deleted.`);
+          loadGames();
+        }}
+        onError={(msg) => {
+          showToast('error', msg);
         }}
       />
 

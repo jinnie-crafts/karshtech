@@ -7,7 +7,7 @@ export const AdminLoginPage: React.FC = () => {
   const { navigate } = useRouter();
   const { login, user } = useAuth();
 
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,16 +53,22 @@ export const AdminLoginPage: React.FC = () => {
 
         <div className="p-8 sm:p-10 rounded-xl bg-[#1A191F] border border-[#39363A] shadow-2xl space-y-6">
           {/* Logo & Heading */}
-          <div className="text-center space-y-2.5">
-            <div className="w-12 h-12 rounded-full border border-[#39363A] bg-[#242329] text-[#FF5A36] flex items-center justify-center mx-auto shadow-sm">
-              <Shield className="w-6 h-6 text-[#FF5A36]" />
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-xl border border-[#39363A] bg-[#101014] p-2 flex items-center justify-center mx-auto shadow-md">
+              <img
+                src="/brand/karsh-tech-k.png"
+                alt="Karsh Tech Logo"
+                className="w-12 h-12 object-contain"
+              />
             </div>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-[#F4F0E8] uppercase">
-              PUBLISHING CONSOLE
-            </h1>
-            <p className="text-[10px] text-[#96929A] uppercase tracking-[0.2em] font-semibold">
-              AUTHENTICATED STUDIO ACCESS
-            </p>
+            <div>
+              <h1 className="font-display text-2xl font-bold tracking-tight text-[#F4F0E8] uppercase">
+                KARSH <span className="text-[#FF5A36]">TECH</span>
+              </h1>
+              <p className="text-[10px] text-[#96929A] uppercase tracking-[0.2em] font-semibold mt-0.5">
+                STUDIO &amp; CONSOLE ACCESS
+              </p>
+            </div>
           </div>
 
           {error && (
@@ -84,8 +90,8 @@ export const AdminLoginPage: React.FC = () => {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
-                  className="w-full pl-10 pr-4 py-2.5 rounded bg-[#0A0A0D] border border-[#39363A] text-xs text-[#F4F0E8] placeholder-[#96929A] focus:outline-none focus:border-[#FF5A36] font-mono-code transition-colors"
+                  placeholder="Enter username"
+                  className="w-full pl-10 pr-4 py-2.5 rounded bg-[#0A0A0D] border border-[#39363A] text-xs text-[#F4F0E8] placeholder-[#96929A]/50 focus:outline-none focus:border-[#FF5A36] font-mono-code transition-colors"
                 />
               </div>
             </div>
@@ -101,8 +107,8 @@ export const AdminLoginPage: React.FC = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 rounded bg-[#0A0A0D] border border-[#39363A] text-xs text-[#F4F0E8] placeholder-[#96929A] focus:outline-none focus:border-[#FF5A36] font-mono-code transition-colors"
+                  placeholder="Enter password"
+                  className="w-full pl-10 pr-4 py-2.5 rounded bg-[#0A0A0D] border border-[#39363A] text-xs text-[#F4F0E8] placeholder-[#96929A]/50 focus:outline-none focus:border-[#FF5A36] font-mono-code transition-colors"
                 />
               </div>
             </div>
@@ -115,24 +121,6 @@ export const AdminLoginPage: React.FC = () => {
               {loading ? 'AUTHENTICATING...' : 'SIGN IN TO CONSOLE'}
             </button>
           </form>
-
-          {/* Credentials Info Notice */}
-          <div className="pt-4 border-t border-[#39363A] text-xs text-[#96929A] space-y-1 bg-[#101014] p-3.5 rounded border border-[#39363A]">
-            <div className="text-[#FF5A36] font-bold uppercase tracking-wider text-[10px]">
-              Initial Studio Credentials:
-            </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[#96929A]">Username:</span>
-              <span className="font-mono-code text-[#F4F0E8]">admin</span>
-            </div>
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[#96929A]">Password:</span>
-              <span className="font-mono-code text-[#FF5A36]">KarshTechAdmin2026!</span>
-            </div>
-            <div className="text-[10px] text-[#96929A] pt-1">
-              Credentials can be updated anytime inside Studio Settings.
-            </div>
-          </div>
         </div>
       </div>
     </div>

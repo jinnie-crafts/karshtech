@@ -3,12 +3,20 @@ import { motion } from 'framer-motion';
 import { Link } from '../context/RouterContext';
 import { containerVariants, fadeUpVariants } from '../lib/motion';
 import {
+  Globe,
+  Layout,
+  Smartphone,
   Gamepad2,
   Code2,
-  Layers,
-  Heart,
   ShieldCheck,
   CheckCircle,
+  Mail,
+  Send,
+  Target,
+  Compass,
+  Cpu,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 
 export const StudioPage: React.FC = () => {
@@ -17,28 +25,28 @@ export const StudioPage: React.FC = () => {
       name: 'Harsh',
       role: 'Founder & Lead Systems Engineer',
       avatar: '/uploads/images/avatar_harsh.png',
-      focus: 'Architecture, Android Jetpack Compose, Native Touch Performance',
-      bio: 'Leading technical design and performance engineering behind Karsh Tech titles, ensuring sub-16ms touch response and robust game architecture.',
+      focus: 'Architecture, Systems Design, React & Android Jetpack Compose',
+      bio: 'Leads engineering architecture and technical execution across Karsh Tech platforms and products, ensuring sub-16ms latency, durable databases, and clean codebases.',
     },
     {
       name: 'Aditya',
-      role: 'Game Mechanics & Level Designer',
+      role: 'Systems & Logic Designer',
       avatar: '/uploads/images/avatar_aditya.png',
-      focus: 'Spatial Logic, Algorithmic Solvability, Level Progression',
-      bio: 'Crafts the interlocking puzzle boards, solvability curves, and progressive difficulty tiers that make each level mentally engaging.',
+      focus: 'Algorithmic Problem-Solving, Data Schemas, Game Mechanics',
+      bio: 'Designs system logic, API workflows, and progressive puzzle algorithms that ensure deterministic solvability and reliable application behavior.',
     },
     {
       name: 'Komal',
-      role: 'UI/UX & Visual Experience',
+      role: 'UI/UX & Product Designer',
       avatar: '/uploads/images/avatar_komal.png',
-      focus: 'Porcelain Aesthetics, Motion Design, Accessibility',
-      bio: 'Shapes the calming visual identity, clean palette harmonies, and fluid micro-animations that define the Karsh Tech experience.',
+      focus: 'Design Systems, Motion Dynamics, Ergonomics & Accessibility',
+      bio: 'Shapes the cinematic visual identity, typography scales, responsive layouts, and restrained micro-interactions that make Karsh Tech interfaces intuitive.',
     },
   ];
 
   return (
     <div className="min-h-screen pt-28 pb-24 text-[#C2BEC1] bg-[#101014] font-sans overflow-hidden">
-      {/* Studio Header */}
+      {/* Header */}
       <section className="max-w-5xl mx-auto px-6 sm:px-8 lg:px-12 text-center mb-16">
         <motion.div
           variants={containerVariants}
@@ -49,75 +57,191 @@ export const StudioPage: React.FC = () => {
           <motion.div variants={fadeUpVariants} className="flex items-center space-x-2.5 mb-1">
             <span className="w-2 h-2 rounded-full bg-[#FF5A36]" />
             <span className="text-xs font-bold tracking-[0.16em] uppercase text-[#F4F0E8] font-display">
-              CRAFT &amp; IDENTITY // EST. 2026
+              ORGANIZATION PROFILE // EST. 2026
             </span>
           </motion.div>
 
           <motion.h1
             variants={fadeUpVariants}
-            className="font-display text-5xl sm:text-6xl md:text-7xl font-bold uppercase tracking-tight text-[#F4F0E8] leading-tight"
+            className="font-display text-4xl sm:text-5xl md:text-6xl font-bold uppercase tracking-tight text-[#F4F0E8] leading-tight"
           >
             ABOUT <span className="text-[#FF5A36]">KARSH TECH.</span>
           </motion.h1>
 
           <motion.p
             variants={fadeUpVariants}
-            className="text-xs sm:text-sm text-[#C2BEC1] max-w-xl mx-auto leading-relaxed pt-1"
+            className="text-xs sm:text-sm text-[#C2BEC1] max-w-2xl mx-auto leading-relaxed pt-1"
           >
-            We are an independent studio dedicated to creating deliberate, tactile, and calming interactive experiences.
-            We build games that treat your time, attention, and cognitive focus with respect.
+            Karsh Tech is an independent technology and digital product development organization.
+            We design, engineer, and deploy purposeful websites, web applications, mobile applications, interactive games, and custom software solutions.
           </motion.p>
         </motion.div>
       </section>
 
-      {/* Core Philosophy Section */}
+      {/* Vision & Mission */}
       <section className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 mb-20">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-6 hover:border-[#FF5A36]/60 transition-colors">
-            <div className="w-10 h-10 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center mb-5">
-              <Heart className="w-5 h-5" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-8 space-y-4 shadow-xl">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
+                <Target className="w-5 h-5" />
+              </div>
+              <h2 className="font-display text-2xl font-bold uppercase text-[#F4F0E8]">
+                OUR MISSION
+              </h2>
             </div>
-            <span className="text-[10px] font-mono-code uppercase tracking-wider text-[#96929A] block mb-1">
-              // PILLAR 01
-            </span>
-            <h3 className="font-display text-2xl font-bold text-[#F4F0E8] mb-2">
-              CALMING FOCUS
-            </h3>
-            <p className="text-xs text-[#C2BEC1] leading-relaxed">
-              No artificial countdowns, flashing pop-up ads, or predatory monetization.
-              We build serene environments where you can think clearly and unpack spatial challenges.
+            <p className="text-xs sm:text-sm text-[#C2BEC1] leading-relaxed">
+              To turn ideas into durable, high-performance digital reality. We build software and digital experiences that respect user attention, operate with rock-solid stability, and solve tangible challenges without unnecessary bloat, predatory monetization, or fragile dependencies.
             </p>
           </div>
 
-          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-6 hover:border-[#FF5A36]/60 transition-colors">
-            <div className="w-10 h-10 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center mb-5">
-              <Layers className="w-5 h-5" />
+          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-8 space-y-4 shadow-xl">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
+                <Compass className="w-5 h-5" />
+              </div>
+              <h2 className="font-display text-2xl font-bold uppercase text-[#F4F0E8]">
+                OUR VISION
+              </h2>
             </div>
-            <span className="text-[10px] font-mono-code uppercase tracking-wider text-[#96929A] block mb-1">
-              // PILLAR 02
-            </span>
-            <h3 className="font-display text-2xl font-bold text-[#F4F0E8] mb-2">
-              RIGOROUS SPATIAL LOGIC
+            <p className="text-xs sm:text-sm text-[#C2BEC1] leading-relaxed">
+              To champion honest, multi-disciplinary software engineering where craftsmanship matters. Whether creating a corporate web presence, an enterprise portal, a bespoke workflow tool, or a spatial puzzle game, we aim for excellence in technical execution and enduring design.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* What Karsh Tech Builds */}
+      <section className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 mb-20">
+        <div className="text-center max-w-xl mx-auto mb-12">
+          <span className="text-[10px] font-mono-code uppercase text-[#FF5A36] tracking-wider font-semibold">
+            COMPREHENSIVE CAPABILITIES
+          </span>
+          <h2 className="font-display text-3xl sm:text-4xl font-bold uppercase tracking-tight text-[#F4F0E8] mt-1">
+            WHAT WE BUILD
+          </h2>
+          <p className="text-xs text-[#96929A] mt-1">
+            Our multi-disciplinary team brings cohesive engineering across five digital domains.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+          <div className="p-6 rounded-xl border border-[#39363A] bg-[#1A191F] space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
+              <Globe className="w-5 h-5" />
+            </div>
+            <h3 className="font-display text-base font-bold uppercase text-[#F4F0E8]">
+              WEBSITES
             </h3>
-            <p className="text-xs text-[#C2BEC1] leading-relaxed">
-              Our puzzle mechanics are built upon algorithmic solvability guarantees.
-              Whether an arrow is turning a corner or navigating a dense corridor, each move requires genuine insight.
+            <p className="text-xs text-[#96929A] leading-relaxed">
+              Responsive marketing sites, corporate web portals, and documentation hubs engineered for speed and search ranking.
             </p>
           </div>
 
-          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-6 hover:border-[#FF5A36]/60 transition-colors">
-            <div className="w-10 h-10 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center mb-5">
+          <div className="p-6 rounded-xl border border-[#39363A] bg-[#1A191F] space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
+              <Layout className="w-5 h-5" />
+            </div>
+            <h3 className="font-display text-base font-bold uppercase text-[#F4F0E8]">
+              WEB APPS
+            </h3>
+            <p className="text-xs text-[#96929A] leading-relaxed">
+              Full-stack platforms, client dashboards, content portals, and authenticated workflows with durable backends.
+            </p>
+          </div>
+
+          <div className="p-6 rounded-xl border border-[#39363A] bg-[#1A191F] space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <h3 className="font-display text-base font-bold uppercase text-[#F4F0E8]">
+              MOBILE APPS
+            </h3>
+            <p className="text-xs text-[#96929A] leading-relaxed">
+              Native Android applications built with Jetpack Compose, offering offline persistence and sub-16ms latency.
+            </p>
+          </div>
+
+          <div className="p-6 rounded-xl border border-[#39363A] bg-[#1A191F] space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
+              <Gamepad2 className="w-5 h-5" />
+            </div>
+            <h3 className="font-display text-base font-bold uppercase text-[#F4F0E8]">
+              GAMES
+            </h3>
+            <p className="text-xs text-[#96929A] leading-relaxed">
+              Distraction-free logic puzzle games (featuring Arrow Puzzle) with zero ads, verified solvability, and offline play.
+            </p>
+          </div>
+
+          <div className="p-6 rounded-xl border border-[#39363A] bg-[#1A191F] space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] text-[#FF5A36] flex items-center justify-center">
               <Code2 className="w-5 h-5" />
             </div>
-            <span className="text-[10px] font-mono-code uppercase tracking-wider text-[#96929A] block mb-1">
-              // PILLAR 03
+            <h3 className="font-display text-base font-bold uppercase text-[#F4F0E8]">
+              CUSTOM SOFTWARE
+            </h3>
+            <p className="text-xs text-[#96929A] leading-relaxed">
+              Internal tools, automated scripts, API integrations, and customized systems built around specific business logic.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Engineering Philosophy Pillars */}
+      <section className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 mb-20">
+        <div className="text-center max-w-xl mx-auto mb-12">
+          <span className="text-[10px] font-mono-code uppercase text-[#FF5A36] tracking-wider font-semibold">
+            HOW WE OPERATE
+          </span>
+          <h2 className="font-display text-3xl sm:text-4xl font-bold uppercase tracking-tight text-[#F4F0E8] mt-1">
+            OUR PHILOSOPHY
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-8 hover:border-[#FF5A36]/60 transition-colors space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center">
+              <Layers className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-mono-code uppercase tracking-wider text-[#96929A] block">
+              // PILLAR 01
             </span>
-            <h3 className="font-display text-2xl font-bold text-[#F4F0E8] mb-2">
+            <h3 className="font-display text-2xl font-bold text-[#F4F0E8]">
+              THOUGHTFUL CRAFT
+            </h3>
+            <p className="text-xs text-[#C2BEC1] leading-relaxed">
+              We reject hasty, disposable development. Every data schema, UI component, and build artifact is shaped with care and verified for longevity.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-8 hover:border-[#FF5A36]/60 transition-colors space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center">
+              <Cpu className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-mono-code uppercase tracking-wider text-[#96929A] block">
+              // PILLAR 02
+            </span>
+            <h3 className="font-display text-2xl font-bold text-[#F4F0E8]">
               NATIVE PERFORMANCE
             </h3>
             <p className="text-xs text-[#C2BEC1] leading-relaxed">
-              Native Android execution in modern frameworks with 60+ FPS touch latency optimization.
-              We prioritize memory efficiency, battery preservation, and complete offline reliability.
+              We prioritize native execution, lightweight page payloads, clean caching strategies, and low memory usage across web and mobile ecosystems.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-8 hover:border-[#FF5A36]/60 transition-colors space-y-3">
+            <div className="w-10 h-10 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-mono-code uppercase tracking-wider text-[#96929A] block">
+              // PILLAR 03
+            </span>
+            <h3 className="font-display text-2xl font-bold text-[#F4F0E8]">
+              USER RESPECT &amp; PRIVACY
+            </h3>
+            <p className="text-xs text-[#C2BEC1] leading-relaxed">
+              Zero surveillance telemetry, zero intrusive advertisement SDKs, and zero artificial dark patterns. We respect the player and user at all times.
             </p>
           </div>
         </div>
@@ -129,14 +253,14 @@ export const StudioPage: React.FC = () => {
           <div className="flex items-center justify-center space-x-2.5 mb-2">
             <span className="w-2 h-2 rounded-full bg-[#FF5A36]" />
             <span className="text-xs font-bold tracking-[0.16em] uppercase text-[#F4F0E8] font-display">
-              THE ARCHITECTS
+              THE BUILDERS
             </span>
           </div>
           <h2 className="font-display text-3xl sm:text-4xl font-bold uppercase tracking-tight text-[#F4F0E8]">
-            STUDIO CORE TEAM
+            CORE TEAM
           </h2>
           <p className="text-xs text-[#96929A] mt-1">
-            The engineers and designers building our interactive titles.
+            The engineers and designers driving technical execution at Karsh Tech.
           </p>
         </div>
 
@@ -175,44 +299,37 @@ export const StudioPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Direct Distribution Philosophy */}
+      {/* Contact Banner */}
       <section className="max-w-5xl mx-auto px-6 sm:px-8 lg:px-12">
         <div className="rounded-xl border border-[#39363A] bg-[#1A191F] p-8 sm:p-12 text-center space-y-5 shadow-xl">
           <div className="w-12 h-12 rounded bg-[#242329] border border-[#39363A] text-[#FF5A36] flex items-center justify-center mx-auto">
-            <ShieldCheck className="w-6 h-6" />
+            <Send className="w-6 h-6" />
           </div>
 
           <h2 className="font-display text-3xl sm:text-4xl font-bold uppercase tracking-tight text-[#F4F0E8]">
-            AUTONOMOUS STUDIO PUBLISHING
+            COLLABORATE WITH KARSH TECH
           </h2>
 
           <p className="text-xs sm:text-sm text-[#C2BEC1] max-w-xl mx-auto leading-relaxed">
-            By publishing directly through Karsh Tech, we provide uncompressed, cryptographically verified APKs without third-party store delays or proprietary lock-ins. You receive updates immediately with complete offline privacy.
+            Interested in partnering on a digital product, commissioning a website or application build, or discussing technology solutions? Reach out to our team.
           </p>
 
-          <div className="flex flex-wrap justify-center gap-5 text-xs font-mono-code text-[#96929A] pt-1">
-            <span className="flex items-center space-x-1.5 text-[#F4F0E8]">
-              <CheckCircle className="w-3.5 h-3.5 text-[#FF5A36]" />
-              <span>Signed Release APKs</span>
-            </span>
-            <span className="flex items-center space-x-1.5 text-[#F4F0E8]">
-              <CheckCircle className="w-3.5 h-3.5 text-[#FF5A36]" />
-              <span>Zero Account Lock-in</span>
-            </span>
-            <span className="flex items-center space-x-1.5 text-[#F4F0E8]">
-              <CheckCircle className="w-3.5 h-3.5 text-[#FF5A36]" />
-              <span>Direct Developer Support</span>
-            </span>
-          </div>
-
-          <div className="pt-3">
+          <div className="pt-2 flex flex-wrap justify-center gap-4">
             <Link
-              href="/games"
+              href="/contact"
               className="inline-flex items-center space-x-2 px-6 py-3 rounded bg-[#FF5A36] hover:bg-[#FF7454] text-[#101014] text-xs font-bold uppercase tracking-wider transition-colors"
             >
-              <Gamepad2 className="w-4 h-4" />
-              <span>EXPLORE STUDIO RELEASES</span>
+              <Send className="w-4 h-4" />
+              <span>Contact Us</span>
             </Link>
+
+            <a
+              href="mailto:karshhtech@gmail.com"
+              className="inline-flex items-center space-x-2 px-6 py-3 rounded border border-[#39363A] bg-[#242329] hover:border-[#FF5A36] text-[#F4F0E8] text-xs font-bold uppercase tracking-wider transition-colors"
+            >
+              <Mail className="w-4 h-4 text-[#FF5A36]" />
+              <span>karshhtech@gmail.com</span>
+            </a>
           </div>
         </div>
       </section>

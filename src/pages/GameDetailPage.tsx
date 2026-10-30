@@ -21,7 +21,7 @@ import {
 
 export const GameDetailPage: React.FC = () => {
   const { params } = useRouter();
-  const slug = params.slug || 'arrow-puzzle';
+  const slug = params.slug || '';
 
   const [game, setGame] = useState<(Game & { releases: Release[] }) | null>(null);
   const [relatedGames, setRelatedGames] = useState<Game[]>([]);
@@ -35,6 +35,12 @@ export const GameDetailPage: React.FC = () => {
 
   useEffect(() => {
     async function loadGame() {
+      if (!slug) {
+        setError('Game not found');
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         setError(null);
@@ -44,13 +50,74 @@ export const GameDetailPage: React.FC = () => {
         const all = await api.getGames();
         setRelatedGames(all.filter((g) => g.slug !== slug).slice(0, 3));
       } catch (err: any) {
+        setGame(null);
         setError(err.message || 'Game not found');
       } finally {
         setLoading(false);
       }
     }
+
     loadGame();
+
+    const handleGamesChanged = () => {
+      loadGame();
+    };
+
+    window.addEventListener('karshtech:games-updated', handleGamesChanged);
+    return () => {
+      window.removeEventListener('karshtech:games-updated', handleGamesChanged);
+    };
   }, [slug]);
+
+  useEffect(() => {
+    if (!game) return;
+    document.title = `${game.title} — Official Download & Specs | Karsh Tech`;
+
+    const scriptId = 'game-jsonld-schema';
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.type = 'application/ld+json';
+      document.head.appendChild(script);
+    }
+
+    const schemaData = {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      'applicationCategory': 'GameApplication',
+      'name': game.title,
+      'operatingSystem': 'Android',
+      'offers': {
+        '@type': 'Offer',
+        'price': '0',
+        'priceCurrency': 'USD',
+      },
+      'author': {
+        '@type': 'Organization',
+        'name': 'Karsh Tech',
+        'url': 'https://tech.aadirishi.in',
+      },
+      'publisher': {
+        '@type': 'Organization',
+        'name': 'Karsh Tech',
+        'url': 'https://tech.aadirishi.in',
+      },
+      'description': game.description,
+      'image': game.cover_image,
+      'downloadUrl': game.latest_release?.apk_download_url || `https://tech.aadirishi.in/games/${game.slug}`,
+      'softwareVersion': game.latest_release?.version_name || '1.0.0',
+    };
+
+    script.text = JSON.stringify(schemaData);
+
+    return () => {
+      const existing = document.getElementById(scriptId);
+      if (existing) {
+        existing.remove();
+      }
+    };
+  }, [game]);
 
   const handleShare = () => {
     if (navigator.clipboard) {

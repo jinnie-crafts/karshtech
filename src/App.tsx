@@ -2,15 +2,21 @@ import React, { useEffect } from 'react';
 import Lenis from 'lenis';
 import { AuthProvider } from './context/AuthContext';
 import { RouterProvider, useRouter } from './context/RouterContext';
+import { GamesProvider } from './context/GamesContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { CustomCursor } from './components/CustomCursor';
 
 // Public Pages
 import { HomePage } from './pages/HomePage';
+import { ServicesPage } from './pages/ServicesPage';
+import { ProductsPage } from './pages/ProductsPage';
+import { ProductDetailPage } from './pages/ProductDetailPage';
+import { PortfolioPage } from './pages/PortfolioPage';
 import { GamesPage } from './pages/GamesPage';
 import { GameDetailPage } from './pages/GameDetailPage';
 import { StudioPage } from './pages/StudioPage';
+import { ContactPage } from './pages/ContactPage';
 import { SupportPage } from './pages/SupportPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
@@ -19,6 +25,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 // Admin Pages
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminProductsPage } from './pages/admin/AdminProductsPage';
 import { AdminGamesPage } from './pages/admin/AdminGamesPage';
 import { AdminReleasesPage } from './pages/admin/AdminReleasesPage';
 import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
@@ -51,29 +58,47 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  // Route normalization helper (strips trailing slashes, hash anchors, and queries)
+  const normalizedPath = path.split('#')[0].split('?')[0].replace(/\/+$/, '') || '/';
+
   // Admin routing check
-  if (path === '/admin/login') {
+  if (normalizedPath === '/admin/login') {
     return <AdminLoginPage />;
   }
-  if (path === '/admin') {
+  if (normalizedPath === '/admin') {
     return <AdminDashboardPage />;
   }
-  if (path === '/admin/games') {
+  if (normalizedPath === '/admin/products') {
+    return <AdminProductsPage />;
+  }
+  if (normalizedPath === '/admin/games') {
     return <AdminGamesPage />;
   }
-  if (path === '/admin/releases') {
+  if (normalizedPath === '/admin/releases') {
     return <AdminReleasesPage />;
   }
-  if (path === '/admin/settings') {
+  if (normalizedPath === '/admin/settings') {
     return <AdminSettingsPage />;
   }
 
   // Public routing
   const renderPublicPage = () => {
-    const normalized = path.replace(/\/+$/, '') || '/';
+    const normalized = normalizedPath;
 
     if (normalized === '/' || normalized === '/index.html') {
       return <HomePage />;
+    }
+    if (normalized === '/services') {
+      return <ServicesPage />;
+    }
+    if (normalized === '/products') {
+      return <ProductsPage />;
+    }
+    if (normalized.startsWith('/products/')) {
+      return <ProductDetailPage />;
+    }
+    if (normalized === '/portfolio' || normalized === '/projects') {
+      return <PortfolioPage />;
     }
     if (normalized === '/games') {
       return <GamesPage />;
@@ -84,7 +109,10 @@ const AppContent: React.FC = () => {
     if (normalized === '/studio' || normalized === '/about') {
       return <StudioPage />;
     }
-    if (normalized === '/support' || normalized === '/contact') {
+    if (normalized === '/contact') {
+      return <ContactPage />;
+    }
+    if (normalized === '/support') {
       return <SupportPage />;
     }
     if (normalized === '/privacy') {
@@ -111,7 +139,9 @@ export default function App() {
   return (
     <RouterProvider>
       <AuthProvider>
-        <AppContent />
+        <GamesProvider>
+          <AppContent />
+        </GamesProvider>
       </AuthProvider>
     </RouterProvider>
   );

@@ -8,7 +8,7 @@ export const AdminSettingsPage: React.FC = () => {
   // Studio Settings State
   const [studioName, setStudioName] = useState('Karsh Tech');
   const [tagline, setTagline] = useState('Crafting Next-Gen Gaming Experiences');
-  const [contactEmail, setContactEmail] = useState('contact@karshtech.com');
+  const [contactEmail, setContactEmail] = useState('karshhtech@gmail.com');
   const [announcement, setAnnouncement] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -35,7 +35,7 @@ export const AdminSettingsPage: React.FC = () => {
         if (res.settings) {
           setStudioName(res.settings.studio_name || 'Karsh Tech');
           setTagline(res.settings.tagline || '');
-          setContactEmail(res.settings.contact_email || 'contact@karshtech.com');
+          setContactEmail(res.settings.contact_email || 'karshhtech@gmail.com');
           setAnnouncement(res.settings.announcement || '');
         }
       } catch (err: any) {

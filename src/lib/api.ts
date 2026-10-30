@@ -1,4 +1,4 @@
-import type { Game, Release, User, DashboardStats } from '../types';
+import type { Game, Release, User, DashboardStats, Product } from '../types';
 
 const API_BASE = '/api';
 
@@ -46,6 +46,28 @@ class ApiClient {
     return this.request<{ game: Game & { releases: Release[] } }>(`/games/${slug}`);
   }
 
+  // Public Products Endpoints
+  public async getProducts(params?: {
+    category?: string;
+    search?: string;
+    featured?: boolean;
+    include_games?: boolean;
+  }): Promise<Product[]> {
+    const query = new URLSearchParams();
+    if (params?.category) query.set('category', params.category);
+    if (params?.search) query.set('search', params.search);
+    if (params?.featured) query.set('featured', 'true');
+    if (params?.include_games !== undefined) query.set('include_games', String(params.include_games));
+
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await this.request<{ products: Product[] }>(`/products${qs}`);
+    return res.products;
+  }
+
+  public async getProductBySlug(slug: string): Promise<{ product: Product }> {
+    return this.request<{ product: Product }>(`/products/${slug}`);
+  }
+
   public async getStats(): Promise<{ stats: DashboardStats; settings: any }> {
     return this.request<{ stats: DashboardStats; settings: any }>('/stats');
   }
@@ -58,6 +80,19 @@ class ApiClient {
     message: string;
   }): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>('/support', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public async submitContact(data: {
+    name: string;
+    email: string;
+    category?: string;
+    subject?: string;
+    message: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/contact', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -99,23 +134,35 @@ class ApiClient {
   }
 
   public async createGame(gameData: Partial<Game>): Promise<{ success: boolean; game: Game }> {
-    return this.request<{ success: boolean; game: Game }>('/admin/games', {
+    const res = await this.request<{ success: boolean; game: Game }>('/admin/games', {
       method: 'POST',
       body: JSON.stringify(gameData),
     });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
   }
 
   public async updateGame(id: string, updates: Partial<Game>): Promise<{ success: boolean; game: Game }> {
-    return this.request<{ success: boolean; game: Game }>(`/admin/games/${id}`, {
+    const res = await this.request<{ success: boolean; game: Game }>(`/admin/games/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
   }
 
   public async deleteGame(id: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/admin/games/${id}`, {
+    const res = await this.request<{ success: boolean }>(`/admin/games/${id}`, {
       method: 'DELETE',
     });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
   }
 
   public async getAdminReleases(): Promise<(Release & { game_title: string })[]> {
@@ -124,23 +171,99 @@ class ApiClient {
   }
 
   public async createRelease(releaseData: Partial<Release>): Promise<{ success: boolean; release: Release }> {
-    return this.request<{ success: boolean; release: Release }>('/admin/releases', {
+    const res = await this.request<{ success: boolean; release: Release }>('/admin/releases', {
       method: 'POST',
       body: JSON.stringify(releaseData),
     });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
   }
 
   public async updateRelease(id: string, updates: Partial<Release>): Promise<{ success: boolean; release: Release }> {
-    return this.request<{ success: boolean; release: Release }>(`/admin/releases/${id}`, {
+    const res = await this.request<{ success: boolean; release: Release }>(`/admin/releases/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
   }
 
   public async deleteRelease(id: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/admin/releases/${id}`, {
+    const res = await this.request<{ success: boolean }>(`/admin/releases/${id}`, {
       method: 'DELETE',
     });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
+  }
+
+  // Admin Products Endpoints
+  public async getAdminProducts(): Promise<Product[]> {
+    const res = await this.request<{ products: Product[] }>('/admin/products');
+    return res.products;
+  }
+
+  public async getAdminProductById(id: string): Promise<{ product: Product }> {
+    return this.request<{ product: Product }>(`/admin/products/${id}`);
+  }
+
+  public async createProduct(productData: Partial<Product>): Promise<{ success: boolean; product: Product }> {
+    const res = await this.request<{ success: boolean; product: Product }>('/admin/products', {
+      method: 'POST',
+      body: JSON.stringify(productData),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
+  }
+
+  public async updateProduct(id: string, updates: Partial<Product>): Promise<{ success: boolean; product: Product }> {
+    const res = await this.request<{ success: boolean; product: Product }>(`/admin/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
+  }
+
+  public async deleteProduct(id: string): Promise<{ success: boolean }> {
+    const res = await this.request<{ success: boolean }>(`/admin/products/${id}`, {
+      method: 'DELETE',
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
+  }
+
+  public async setProductStatus(id: string, status: 'Draft' | 'Published'): Promise<{ success: boolean; product: Product }> {
+    const res = await this.request<{ success: boolean; product: Product }>(`/admin/products/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
+  }
+
+  public async setProductFeatured(id: string, featured: boolean): Promise<{ success: boolean; product: Product }> {
+    const res = await this.request<{ success: boolean; product: Product }>(`/admin/products/${id}/featured`, {
+      method: 'PATCH',
+      body: JSON.stringify({ featured }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
   }
 
   public async getAdminSettings(): Promise<{ settings: any }> {

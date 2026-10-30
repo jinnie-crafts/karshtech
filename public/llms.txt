@@ -1,0 +1,29 @@
+# Karsh Tech
+> Technology & Digital Product Development Organization
+
+- **Website**: https://tech.aadirishi.in
+- **Official Contact**: karshhtech@gmail.com
+- **Organization Identity**: Karsh Tech is an independent technology organization that creates modern websites, web applications, mobile applications, interactive games, and custom software solutions.
+- **Flagship Products**: Arrow Puzzle (native Android spatial logic game) and Karsh Tech Platform (autonomous technology publishing portal).
+
+## Services & Core Disciplines
+- **Websites**: Modern, responsive, high-performance websites for businesses, creators, and digital brands.
+- **Web Applications**: Interactive platforms, client portals, SaaS dashboards, and browser-based systems built with modern reactive architectures.
+- **Mobile Applications**: Native and responsive Android applications engineered with Kotlin, Jetpack Compose, and sub-16ms latency.
+- **Game Development**: Distraction-free, mindful games featuring deterministic spatial logic, algorithmic solvability guarantees, and zero telemetry bloat.
+- **Custom Software**: Purpose-built desktop tools, developer utilities, automated operational workflows, and robust backend APIs.
+
+## Products & Portfolio
+- **Arrow Puzzle**: Native Android spatial logic puzzle game built with Jetpack Compose. Offline-first, zero ads, sub-16ms frame times. URL: https://tech.aadirishi.in/games/arrow-puzzle
+- **Karsh Tech Platform**: Production web application and autonomous distribution engine powering client delivery and verified binary streaming. URL: https://tech.aadirishi.in
+
+## Primary Resources & Navigation
+- Official Portal: https://tech.aadirishi.in
+- Services Overview: https://tech.aadirishi.in/services
+- Portfolio & Projects: https://tech.aadirishi.in/portfolio
+- Games Catalog: https://tech.aadirishi.in/games
+- About Karsh Tech: https://tech.aadirishi.in/studio
+- Contact Us: https://tech.aadirishi.in/contact
+- Support & FAQ: https://tech.aadirishi.in/support
+- Privacy Policy: https://tech.aadirishi.in/privacy
+- Terms of Service: https://tech.aadirishi.in/terms

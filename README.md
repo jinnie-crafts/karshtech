@@ -1,23 +1,32 @@
-# Karsh Tech — Premium Game Studio Website & Publishing Platform
+# Karsh Tech — Technology & Digital Product Development Organization
 
-An enterprise-grade, cinematic game studio website and autonomous publishing platform for **Karsh Tech**. Distributes verified Android releases, tracks APK downloads, and provides an administrative console to manage game listings, release pipelines, and studio metadata without editing source code.
+An enterprise-grade technology corporate website and digital product publishing platform for **Karsh Tech** (production website: `https://tech.aadirishi.in` • official contact: `karshhtech@gmail.com`).
+
+Karsh Tech is an independent technology and digital product development organization that builds:
+- **Websites**: Modern, responsive, high-performance websites for businesses and brands.
+- **Web Applications**: Interactive platforms, client portals, and administrative dashboards.
+- **Mobile Applications**: Native Android applications engineered with Kotlin and Jetpack Compose.
+- **Games**: Mindful, tactile spatial logic games (such as Arrow Puzzle).
+- **Custom Software**: Purpose-built software solutions and operational tools.
 
 ---
 
 ## 🌟 Key Features
 
-### 1. Public Gaming Portal
-- **Cinematic Homepage**: Atmospheric dark aesthetic, dynamic glow lighting, studio metrics counter strip, and featured showcase for **Arrow Puzzle**.
-- **Central Games Library (`/games`)**: Dynamic search, platform chips (Android, PC, Web, etc.), genre tags, release status filters, and smooth card layout transitions.
-- **Dynamic Game Pages (`/games/:slug`)**: Verified technical specifications (Android 8.0 to Android 15), features, controls guide, interactive high-resolution screenshot lightbox, version history, and cryptographic release badges.
-- **Official APK Direct Download**: Directly delivers the signed release APK (`app-release.apk`, ~2.4 MB) with automatic byte streaming and live download tracking.
-- **Studio Story & Team (`/studio`)**: Transparent development philosophy (Calming Focus, Spatial Logic, Engineering Craft) and verified team profiles.
-- **Support & FAQ (`/support`)**: Issue reporting form and step-by-step sideloading installation guide.
-- **Legal & Compliance (`/privacy`, `/terms`)**: Production-ready privacy policy and distribution terms tailored for offline-first logic games.
+### 1. Corporate Technology Portal
+- **Cinematic Homepage (`/`)**: "We Turn Ideas into Digital Reality." Multi-disciplinary service overview, portfolio showcase, five core engineering pillars, five-step development workflow, and organization-wide FAQ.
+- **Dedicated Services (`/services`)**: In-depth breakdown of Website Development, Web Application Development, Mobile Application Development, Game Development, and Custom Software.
+- **Portfolio & Projects (`/portfolio`)**: Curated project archive featuring Arrow Puzzle, the Karsh Tech Platform, and categorized deliverables.
+- **Games Catalog (`/games`)**: Dedicated catalog preserving game browsing, technical specifications, and verified APK releases.
+- **About Karsh Tech (`/studio`)**: Organization vision, mission, engineering principles, and core team profiles.
+- **Direct Contact (`/contact`)**: Official channel with transmission form and direct email: `karshhtech@gmail.com`.
+- **Support Hub (`/support`)**: General product assistance, website help, APK sideloading installation guide, and ticket dispatch.
+- **Legal Compliance (`/privacy`, `/terms`)**: Comprehensive, factual 12-section Privacy Policy and Terms of Service tailored to actual software and data operations.
+- **SEO / GEO / AEO Optimization**: Dynamic `/sitemap.xml`, `/robots.txt`, `/llms.txt`, OpenGraph/Twitter social cards, and Schema.org JSON-LD structured data (`Organization`, `WebSite`, `Service`, `SoftwareApplication`, and `FAQPage`).
 
 ### 2. Functional Admin Dashboard
 - **Protected Administrative Console (`/admin`)**:
-  - Secure session handling with Bcrypt password hashing and HTTP-only JWT cookies.
+  - Hardened JWT authentication with cryptographically random secrets, `HS256` algorithm enforcement, `iss`/`aud`/`sub` claim validation, and database identity verification.
   - In-memory rate limiting (5 failed attempts per 15 minutes) against brute-force attacks.
 - **Game Management (`/admin/games`)**:
   - Full CRUD: Create, edit, toggle featured placement, upload cover artwork and screenshots, manage requirements, and delete titles.
@@ -28,6 +37,7 @@ An enterprise-grade, cinematic game studio website and autonomous publishing pla
   - Master password update and public announcement configuration.
 
 ### 3. Motion & Aesthetics
+- **Approved Brand Logo Integration**: Official geometric K emblem and full brand identity assets integrated across headers, footers, admin console, favicons, touch icons, and social sharing previews. Wordmark consistently reads `KARSH TECH`.
 - **Cinematic Easing**: Custom quintic curve `[0.16, 1, 0.3, 1]` adapted from the reference portfolio for smooth reveals.
 - **Interactive 3D Tilt & Cursor Spotlight**: Framer Motion spring physics with zero layout shift on game cards.
 - **Lenis Smooth Scroll**: 60 FPS buttery-smooth scrolling with automatic `prefers-reduced-motion` compliance.
@@ -60,8 +70,8 @@ Open [http://localhost:3001](http://localhost:3001) in your browser.
 ## 🔐 Admin Console Access
 
 - **Login URL**: [http://localhost:3001/admin/login](http://localhost:3001/admin/login) (or port 5173 in dev mode)
-- **Initial Username**: `admin`
-- **Initial Password**: `KarshTechAdmin2026!`
+- **Initial Username**: `khrgosh`
+- **Initial Password**: `KarshTechAdmin2026!` (or configured `ADMIN_PASSWORD`)
 
 *(You can update this password at any time under `/admin/settings`)*
 

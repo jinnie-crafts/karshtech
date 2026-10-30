@@ -1,0 +1,21 @@
+{
+  "name": "Karsh Tech — Technology & Digital Product Development",
+  "short_name": "Karsh Tech",
+  "description": "Karsh Tech creates modern websites, web applications, mobile applications, games, and custom software solutions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101014",
+  "theme_color": "#101014",
+  "icons": [
+    {
+      "src": "/brand/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
