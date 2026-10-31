@@ -23,8 +23,10 @@ out/
 # Server runtime data & dynamic uploads
 server/data/*.json
 !server/data/.gitkeep
-server/uploads/**/*
-!server/uploads/**/.gitkeep
+server/uploads/*
+!server/uploads/images/
+server/uploads/images/*
+!server/uploads/images/avatar_*
 
 # Large binary artifacts & APK releases
 *.apk

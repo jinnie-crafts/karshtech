@@ -29,19 +29,20 @@ export const StudioPage: React.FC = () => {
       bio: 'Leads engineering architecture and technical execution across Karsh Tech platforms and products, ensuring sub-16ms latency, durable databases, and clean codebases.',
     },
     {
-      name: 'Aditya',
-      role: 'Systems & Logic Designer',
-      avatar: '/uploads/images/avatar_aditya.png',
-      focus: 'Algorithmic Problem-Solving, Data Schemas, Game Mechanics',
-      bio: 'Designs system logic, API workflows, and progressive puzzle algorithms that ensure deterministic solvability and reliable application behavior.',
-    },
-    {
       name: 'Komal',
       role: 'UI/UX & Product Designer',
       avatar: '/uploads/images/avatar_komal.png',
       focus: 'Design Systems, Motion Dynamics, Ergonomics & Accessibility',
       bio: 'Shapes the cinematic visual identity, typography scales, responsive layouts, and restrained micro-interactions that make Karsh Tech interfaces intuitive.',
     },
+    {
+      name: 'Aditya',
+      role: 'Systems & Logic Designer',
+      avatar: '/uploads/images/avatar_aditya.png',
+      focus: 'Algorithmic Problem-Solving, Data Schemas, Game Mechanics',
+      bio: 'Designs system logic, API workflows, and progressive puzzle algorithms that ensure deterministic solvability and reliable application behavior.',
+    },
+    
   ];
 
   return (
