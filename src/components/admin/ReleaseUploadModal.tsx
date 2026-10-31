@@ -34,6 +34,9 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
 
   // APK file upload state
   const [apkFilename, setApkFilename] = useState(initialRelease?.apk_filename || '');
+  const [originalFilename, setOriginalFilename] = useState(
+    initialRelease?.original_filename || initialRelease?.apk_filename || ''
+  );
   const [apkFileSize, setApkFileSize] = useState<number>(initialRelease?.apk_file_size || 0);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(!!initialRelease?.apk_filename);
@@ -53,6 +56,7 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
         setReleaseNotes(initialRelease.release_notes || '');
         setIsPublished(initialRelease.is_published ?? true);
         setApkFilename(initialRelease.apk_filename || '');
+        setOriginalFilename(initialRelease.original_filename || initialRelease.apk_filename || '');
         setApkFileSize(initialRelease.apk_file_size || 0);
         setUploadSuccess(!!initialRelease.apk_filename);
       } else {
@@ -66,6 +70,7 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
         setReleaseNotes('Performance improvements, touch latency optimization, and level adjustments.');
         setIsPublished(true);
         setApkFilename('');
+        setOriginalFilename('');
         setApkFileSize(0);
         setUploadSuccess(false);
       }
@@ -88,6 +93,7 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
       setError(null);
       const res = await api.uploadApk(file);
       setApkFilename(res.filename);
+      setOriginalFilename(res.original_filename || file.name);
       setApkFileSize(res.size);
       setUploadSuccess(true);
     } catch (err: any) {
@@ -127,6 +133,7 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
       target_sdk: Number(targetSdk),
       release_notes: releaseNotes.trim(),
       apk_filename: apkFilename,
+      original_filename: originalFilename || apkFilename,
       apk_file_size: apkFileSize,
       is_published: isPublished,
       release_date: new Date().toISOString().split('T')[0],
@@ -248,8 +255,8 @@ export const ReleaseUploadModal: React.FC<ReleaseUploadModalProps> = ({
               ) : uploadSuccess ? (
                 <div className="space-y-2">
                   <CheckCircle2 className="w-8 h-8 text-[#34D399] mx-auto" />
-                  <div className="text-xs font-mono text-[#F4F0E8] font-bold">
-                    {apkFilename}
+                  <div className="text-xs font-mono text-[#F4F0E8] font-bold break-all" title={originalFilename || apkFilename}>
+                    {originalFilename || apkFilename}
                   </div>
                   <div className="text-[11px] font-mono text-[#96929A]">
                     File Size: {(apkFileSize / 1024 / 1024).toFixed(2)} MB ({apkFileSize.toLocaleString()} bytes)

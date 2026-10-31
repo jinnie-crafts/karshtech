@@ -250,7 +250,13 @@ export const AdminDashboardPage: React.FC = () => {
                   {recentReleases.map((rel) => (
                     <tr key={rel.id} className="hover:bg-[#242329]/60 transition-colors">
                       <td className="py-3.5 text-[#F4F0E8] font-bold text-sm">
-                        {rel.game_title}
+                        <div>{rel.game_title}</div>
+                        <div
+                          className="text-[10px] font-mono text-[#96929A] font-normal truncate max-w-[160px] mt-0.5"
+                          title={rel.original_filename || rel.apk_filename}
+                        >
+                          {rel.original_filename || rel.apk_filename}
+                        </div>
                       </td>
                       <td className="py-3.5 text-[#FF5A36] font-mono text-xs">v{rel.version_name}</td>
                       <td className="py-3.5 text-[#96929A] font-mono text-xs">#{rel.version_code}</td>

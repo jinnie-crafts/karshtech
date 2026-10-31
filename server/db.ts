@@ -1,5 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  DATA_DIR,
+  DB_FILE,
+  BACKUPS_DIR,
+  IMAGES_DIR,
+  APKS_DIR,
+  IS_PERSISTENT_STORAGE,
+  ensureStorageDirectories,
+} from './paths.js';
 
 export interface GameRequirements {
   min_android?: string;
@@ -17,6 +26,7 @@ export interface ReleaseRecord {
   release_date: string;
   release_notes: string;
   apk_filename: string;
+  original_filename?: string;
   apk_file_size: number;
   apk_download_url: string;
   min_sdk: number;
@@ -100,37 +110,142 @@ export interface DatabaseSchema {
   products?: ProductRecord[];
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-
 class DatabaseEngine {
   private data: DatabaseSchema;
+  private lastBackupTime = 0;
 
   constructor() {
-    this.ensureDirectory(DATA_DIR);
+    ensureStorageDirectories();
     this.data = this.load();
+    console.log(`[DB] Database active. Storage persistent: ${IS_PERSISTENT_STORAGE}. Path: ${DB_FILE}`);
   }
 
-  private ensureDirectory(dir: string) {
+  private ensureDirectory(dir: string): void {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
   }
 
+  public createBackup(tag = 'auto'): string | null {
+    try {
+      this.ensureDirectory(BACKUPS_DIR);
+      if (!fs.existsSync(DB_FILE)) return null;
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(BACKUPS_DIR, `db_backup_${timestamp}_${tag}.json`);
+      fs.copyFileSync(DB_FILE, backupPath);
+      this.lastBackupTime = Date.now();
+      this.pruneOldBackups();
+      return backupPath;
+    } catch (err) {
+      console.warn('[Database] Warning creating database backup:', err);
+      return null;
+    }
+  }
+
+  private pruneOldBackups(maxBackups = 20): void {
+    try {
+      if (!fs.existsSync(BACKUPS_DIR)) return;
+      const files = fs
+        .readdirSync(BACKUPS_DIR)
+        .filter((f) => f.startsWith('db_backup_') && f.endsWith('.json'))
+        .map((f) => ({
+          name: f,
+          fullPath: path.join(BACKUPS_DIR, f),
+          time: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs,
+        }))
+        .sort((a, b) => b.time - a.time);
+
+      if (files.length > maxBackups) {
+        const toDelete = files.slice(maxBackups);
+        for (const file of toDelete) {
+          try {
+            fs.unlinkSync(file.fullPath);
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[Database] Warning pruning old backups:', err);
+    }
+  }
+
+  private tryRecoverFromBackup(): DatabaseSchema | null {
+    try {
+      if (!fs.existsSync(BACKUPS_DIR)) return null;
+      const backupFiles = fs
+        .readdirSync(BACKUPS_DIR)
+        .filter((f) => f.startsWith('db_backup_') && f.endsWith('.json'))
+        .map((f) => ({
+          path: path.join(BACKUPS_DIR, f),
+          time: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs,
+        }))
+        .sort((a, b) => b.time - a.time);
+
+      for (const b of backupFiles) {
+        try {
+          const raw = fs.readFileSync(b.path, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.games) && Array.isArray(parsed.users)) {
+            console.log(`[Database RECOVERY] Restoring valid state from backup: ${b.path}`);
+            return parsed;
+          }
+        } catch {}
+      }
+    } catch {}
+    return null;
+  }
+
   private load(): DatabaseSchema {
+    this.ensureDirectory(DATA_DIR);
+    this.ensureDirectory(BACKUPS_DIR);
+
     if (fs.existsSync(DB_FILE)) {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        if (!raw.trim()) {
+          throw new Error('db.json is zero bytes or empty whitespace');
+        }
         const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed.products)) {
-          parsed.products = [];
+        if (typeof parsed !== 'object' || parsed === null) {
+          throw new Error('db.json root is not an object');
+        }
+        if (!Array.isArray(parsed.games)) parsed.games = [];
+        if (!Array.isArray(parsed.releases)) parsed.releases = [];
+        if (!Array.isArray(parsed.users)) parsed.users = [];
+        if (!Array.isArray(parsed.products)) parsed.products = [];
+        if (!parsed.settings || typeof parsed.settings !== 'object') {
+          parsed.settings = {
+            studio_name: 'Karsh Tech',
+            tagline: 'Turning Ideas into Digital Reality',
+            contact_email: 'karshhtech@gmail.com',
+            updated_at: new Date().toISOString(),
+          };
         }
         return parsed;
-      } catch (err) {
-        console.error('Error reading db.json, falling back to default schema', err);
+      } catch (err: any) {
+        console.error(`[Database CRITICAL] Failed to parse db.json at ${DB_FILE}:`, err.message);
+
+        // Preserve corrupt file for analysis
+        const corruptPath = `${DB_FILE}.corrupt.${Date.now()}`;
+        try {
+          fs.copyFileSync(DB_FILE, corruptPath);
+          console.error(`[Database CRITICAL] Corrupt file preserved safely at: ${corruptPath}`);
+        } catch {}
+
+        // Attempt recovery from backup
+        const recovered = this.tryRecoverFromBackup();
+        if (recovered) {
+          return recovered;
+        }
+
+        // Refuse to silently overwrite database with empty data
+        throw new Error(
+          `CRITICAL: Database at ${DB_FILE} is corrupted and no valid backup was found. Refusing to overwrite production data with an empty database. Corrupt file preserved at ${corruptPath}.`
+        );
       }
     }
-    return {
+
+    const initialData: DatabaseSchema = {
       games: [],
       releases: [],
       users: [],
@@ -142,17 +257,45 @@ class DatabaseEngine {
         updated_at: new Date().toISOString(),
       },
     };
+    return initialData;
   }
 
   public save(): void {
     try {
       this.ensureDirectory(DATA_DIR);
-      const tmpFile = `${DB_FILE}.tmp.${Date.now()}`;
+
+      // Create a backup if more than 10 minutes have elapsed since last backup or if file exists
+      if (fs.existsSync(DB_FILE) && Date.now() - this.lastBackupTime > 10 * 60 * 1000) {
+        this.createBackup('auto');
+      }
+
+      const tmpFile = path.join(
+        DATA_DIR,
+        `db.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      );
       fs.writeFileSync(tmpFile, JSON.stringify(this.data, null, 2), 'utf-8');
       fs.renameSync(tmpFile, DB_FILE);
     } catch (err) {
       console.error('Failed to atomically persist db.json:', err);
+      throw err;
     }
+  }
+
+  public reload(): void {
+    this.data = this.load();
+  }
+
+  public getStorageInfo() {
+    return {
+      dataDir: DATA_DIR,
+      dbFile: DB_FILE,
+      backupsDir: BACKUPS_DIR,
+      isPersistent: IS_PERSISTENT_STORAGE,
+      gamesCount: this.data.games.length,
+      releasesCount: this.data.releases.length,
+      productsCount: (this.data.products || []).length,
+      usersCount: this.data.users.length,
+    };
   }
 
   // Games CRUD
@@ -205,15 +348,11 @@ class DatabaseEngine {
     this.data.releases = this.data.releases.filter((r) => r.game_id !== id);
 
     // Clean up unreferenced APK files from disk safely
-    const uploadsDir = path.resolve(process.cwd(), 'server', 'uploads');
-    const apksDir = path.join(uploadsDir, 'apks');
-    const imagesDir = path.join(uploadsDir, 'images');
-
     for (const rel of gameReleases) {
       if (rel.apk_filename) {
         const isStillUsed = this.data.releases.some((r) => r.apk_filename === rel.apk_filename);
         if (!isStillUsed) {
-          const apkPath = path.join(apksDir, rel.apk_filename);
+          const apkPath = path.join(APKS_DIR, rel.apk_filename);
           if (fs.existsSync(apkPath)) {
             try {
               fs.unlinkSync(apkPath);
@@ -244,7 +383,7 @@ class DatabaseEngine {
             g.screenshots.includes(imgUrl)
           );
           if (!isReferencedByOtherGame) {
-            const imgPath = path.join(imagesDir, filename);
+            const imgPath = path.join(IMAGES_DIR, filename);
             if (fs.existsSync(imgPath)) {
               try {
                 fs.unlinkSync(imgPath);
@@ -263,16 +402,22 @@ class DatabaseEngine {
 
   // Releases CRUD
   public getReleases(): ReleaseRecord[] {
-    return [...this.data.releases];
+    return this.data.releases.map((r) => ({
+      ...r,
+      original_filename: r.original_filename || r.apk_filename,
+    }));
   }
 
   public getReleasesByGameId(gameId: string): ReleaseRecord[] {
     const game = this.getGameById(gameId) || this.getGameBySlug(gameId);
     const targetId = game?.id || gameId;
     const targetSlug = game?.slug;
-    return this.data.releases.filter(
-      (r) => r.game_id === targetId || (targetSlug && r.game_id === targetSlug)
-    );
+    return this.data.releases
+      .filter((r) => r.game_id === targetId || (targetSlug && r.game_id === targetSlug))
+      .map((r) => ({
+        ...r,
+        original_filename: r.original_filename || r.apk_filename,
+      }));
   }
 
   public getLatestReleaseByGameId(gameId: string, onlyPublished = true): ReleaseRecord | undefined {
@@ -284,17 +429,28 @@ class DatabaseEngine {
         (r.game_id === targetId || (targetSlug && r.game_id === targetSlug)) &&
         (!onlyPublished || r.is_published)
     );
-    return releases.sort((a, b) => b.version_code - a.version_code)[0];
+    const latest = releases.sort((a, b) => b.version_code - a.version_code)[0];
+    if (!latest) return undefined;
+    return {
+      ...latest,
+      original_filename: latest.original_filename || latest.apk_filename,
+    };
   }
 
   public getReleaseById(id: string): ReleaseRecord | undefined {
-    return this.data.releases.find((r) => r.id === id);
+    const rel = this.data.releases.find((r) => r.id === id);
+    if (!rel) return undefined;
+    return {
+      ...rel,
+      original_filename: rel.original_filename || rel.apk_filename,
+    };
   }
 
   public createRelease(release: Omit<ReleaseRecord, 'id' | 'download_count' | 'created_at'>): ReleaseRecord {
     const id = `rel_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newRelease: ReleaseRecord = {
       ...release,
+      original_filename: release.original_filename || release.apk_filename,
       id,
       download_count: 0,
       created_at: new Date().toISOString(),

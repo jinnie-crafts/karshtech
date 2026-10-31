@@ -42,14 +42,12 @@ export const GamesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [refreshGames]);
 
-  // Authoritative featured game logic: only select an existing, published game
+  // Authoritative featured game logic: only select an existing game explicitly marked featured: true
   const featuredGame = useMemo(() => {
     if (!games || games.length === 0) return undefined;
     return (
       games.find((g) => g.featured && (g.status === 'Available' || g.status === 'Updated')) ||
-      games.find((g) => g.featured) ||
-      games.find((g) => g.status === 'Available' || g.status === 'Updated') ||
-      games[0]
+      games.find((g) => g.featured)
     );
   }, [games]);
 

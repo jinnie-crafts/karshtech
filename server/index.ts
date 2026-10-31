@@ -17,17 +17,19 @@ import {
   clearLoginAttempts,
 } from './auth.js';
 import { seedDatabase } from './seed.js';
+import {
+  UPLOADS_DIR,
+  DEFAULT_REPO_UPLOADS_DIR,
+  IMAGES_DIR,
+  APKS_DIR,
+  ensureStorageDirectories,
+  IS_PERSISTENT_STORAGE,
+} from './paths.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Upload Directories
-const UPLOADS_DIR = path.resolve(process.cwd(), 'server', 'uploads');
-const IMAGES_DIR = path.join(UPLOADS_DIR, 'images');
-const APKS_DIR = path.join(UPLOADS_DIR, 'apks');
-
-fs.mkdirSync(IMAGES_DIR, { recursive: true });
-fs.mkdirSync(APKS_DIR, { recursive: true });
+ensureStorageDirectories();
 
 // Allowed origins for CORS and CSRF protection
 const ALLOWED_ORIGINS = [
@@ -76,6 +78,9 @@ app.use('/api/admin', (req, res, next) => {
 
 // Static file serving for uploads
 app.use('/uploads', express.static(UPLOADS_DIR));
+if (path.resolve(UPLOADS_DIR) !== path.resolve(DEFAULT_REPO_UPLOADS_DIR) && fs.existsSync(DEFAULT_REPO_UPLOADS_DIR)) {
+  app.use('/uploads', express.static(DEFAULT_REPO_UPLOADS_DIR));
+}
 
 // Configure Multer for Image Uploads
 const imageStorage = multer.diskStorage({
@@ -107,18 +112,61 @@ const uploadImage = multer({
   },
 });
 
+
+export function sanitizeOriginalFilename(rawName: string | undefined, fallbackStoredName?: string): string {
+  let name = (rawName || '').trim();
+  if (!name && fallbackStoredName) {
+    name = fallbackStoredName.trim();
+  }
+  if (!name) {
+    return 'release.apk';
+  }
+
+  // Strip path traversal components
+  name = path.basename(name);
+  // Strip null bytes and control characters
+  name = name.replace(/[\x00-\x1f\x7f]/g, '');
+  // Strip characters forbidden across Windows/Linux filesystems & quotes
+  name = name.replace(/["\\/:*?<>|]/g, '');
+  // Normalize whitespace to single spaces
+  name = name.replace(/\s+/g, ' ').trim();
+
+  // Ensure ends with .apk
+  if (!name.toLowerCase().endsWith('.apk')) {
+    name += '.apk';
+  }
+  if (name.toLowerCase() === '.apk' || name.length === 0) {
+    return 'release.apk';
+  }
+  return name;
+}
+
+export function formatContentDisposition(filename: string): string {
+  // ASCII fallback for filename="..." parameter
+  const asciiFallback = filename.replace(/[^\x20-\x7E]|["\\]/g, '_');
+  // RFC 5987 / RFC 6266 percent encoding for filename* parameter
+  const encodedUtf8 = encodeURIComponent(filename)
+    .replace(/['()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/\*/g, '%2A');
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedUtf8}`;
+}
+
 // Configure Multer for APK Uploads
 const apkStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, APKS_DIR);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = path.extname(file.originalname).toLowerCase() || '.apk';
     const safeBase = path
       .basename(file.originalname, ext)
       .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .substring(0, 40);
-    const uniqueName = `${safeBase}_${Date.now()}${ext || '.apk'}`;
+      .substring(0, 40)
+      .replace(/^_+|_+$/g, '');
+    const prefix = safeBase || 'release';
+    const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const uniqueName = `${prefix}_${uniqueSuffix}${ext}`;
     cb(null, uniqueName);
   },
 });
@@ -362,8 +410,18 @@ app.get('/api/releases/:id/download', (req, res) => {
     // Increment download counter
     db.incrementDownload(release.id);
 
-    // Stream download
-    res.download(apkPath, release.apk_filename, (err) => {
+    // Stream download with RFC 6266 / RFC 5987 compliant Content-Disposition
+    const downloadFilename = sanitizeOriginalFilename(release.original_filename, release.apk_filename);
+    const contentDisposition = formatContentDisposition(downloadFilename);
+
+    res.setHeader('Content-Disposition', contentDisposition);
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+
+    res.sendFile(apkPath, {
+      headers: {
+        'Content-Disposition': contentDisposition,
+      },
+    }, (err) => {
       if (err && !res.headersSent) {
         res.status(500).json({ error: 'Download failed during transfer' });
       }
@@ -981,6 +1039,7 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
       release_date,
       release_notes,
       apk_filename,
+      original_filename,
       apk_file_size,
       min_sdk,
       target_sdk,
@@ -1000,6 +1059,11 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
       return;
     }
 
+    const sanitizedOriginal = sanitizeOriginalFilename(
+      original_filename || req.body.original_name || req.body.originalFilename,
+      apk_filename
+    );
+
     const created = db.createRelease({
       game_id: game.id,
       version_name,
@@ -1007,6 +1071,7 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
       release_date: release_date || new Date().toISOString().split('T')[0],
       release_notes: release_notes || 'General performance updates and optimizations.',
       apk_filename,
+      original_filename: sanitizedOriginal,
       apk_file_size: Number(apk_file_size) || 0,
       apk_download_url: '',
       min_sdk: Number(min_sdk) || 26,
@@ -1047,6 +1112,11 @@ app.put('/api/admin/releases/:id', requireAdmin, (req, res) => {
       delete updates.gameId;
     }
 
+    if (updates.original_filename) {
+      updates.original_filename = sanitizeOriginalFilename(updates.original_filename, existing.apk_filename);
+    } else if (updates.apk_filename && !existing.original_filename) {
+      updates.original_filename = sanitizeOriginalFilename(updates.apk_filename);
+    }
     const updated = db.updateRelease(id, updates);
     res.json({ success: true, release: updated });
   } catch (err: any) {
@@ -1095,11 +1165,14 @@ app.post('/api/admin/upload/apk', requireAdmin, uploadApk.single('apk'), (req, r
       res.status(400).json({ error: 'No APK file uploaded' });
       return;
     }
+    const sanitizedOriginal = sanitizeOriginalFilename(req.file.originalname);
     res.json({
       success: true,
       filename: req.file.filename,
+      stored_filename: req.file.filename,
+      original_filename: sanitizedOriginal,
+      original_name: sanitizedOriginal,
       size: req.file.size,
-      original_name: req.file.originalname,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'APK upload failed' });
@@ -1117,6 +1190,19 @@ app.put('/api/admin/settings', requireAdmin, (req, res) => {
   res.json({ success: true, settings: updated });
 });
 
+// GET /api/admin/system/storage
+app.get('/api/admin/system/storage', requireAdmin, (_req, res) => {
+  res.json({
+    success: true,
+    storage: {
+      ...db.getStorageInfo(),
+      uploadsDir: UPLOADS_DIR,
+      imagesDir: IMAGES_DIR,
+      apksDir: APKS_DIR,
+    },
+  });
+});
+
 // ==========================================
 // PRODUCTION FRONTEND HANDLER
 // ==========================================
@@ -1130,9 +1216,11 @@ if (fs.existsSync(distPath)) {
 
 // Start Server
 async function startServer() {
+  ensureStorageDirectories();
   await seedDatabase();
   app.listen(PORT, () => {
     console.log(`[Karsh Tech Server] Running securely on http://localhost:${PORT}`);
+    console.log(`[Karsh Tech Server] Storage: persistent=${IS_PERSISTENT_STORAGE}, uploads=${UPLOADS_DIR}`);
   });
 }
 

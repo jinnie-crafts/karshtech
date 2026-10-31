@@ -155,7 +155,13 @@ export const AdminReleasesPage: React.FC = () => {
                     <tr key={rel.id} className="hover:bg-[#242329]/50 transition-colors">
                       {/* Game */}
                       <td className="py-3.5 px-5 text-[#F4F0E8] font-bold text-sm">
-                        {rel.game_title}
+                        <div>{rel.game_title}</div>
+                        <div
+                          className="text-[11px] font-mono text-[#96929A] font-normal truncate max-w-[220px] mt-0.5"
+                          title={rel.original_filename || rel.apk_filename}
+                        >
+                          {rel.original_filename || rel.apk_filename}
+                        </div>
                       </td>
 
                       {/* Version */}

@@ -2,17 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import { db } from './db.js';
 import { hashPassword } from './auth.js';
-
-const UPLOADS_DIR = path.resolve(process.cwd(), 'server', 'uploads');
-const IMAGES_DIR = path.join(UPLOADS_DIR, 'images');
-const APKS_DIR = path.join(UPLOADS_DIR, 'apks');
-
-const ARROW_PUZZLE_SRC = 'C:\\Users\\karsh\\Desktop\\Arrow Puzzle';
+import {
+  IMAGES_DIR,
+  APKS_DIR,
+  DEFAULT_REPO_UPLOADS_DIR,
+  ensureStorageDirectories,
+} from './paths.js';
 
 export async function seedDatabase(): Promise<void> {
-  // Ensure upload folders exist
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  fs.mkdirSync(APKS_DIR, { recursive: true });
+  // Ensure storage directories are initialized
+  ensureStorageDirectories();
 
   // 1. Seed or Migrate Admin User
   const defaultUsername = process.env.ADMIN_USERNAME || 'khrgosh';
@@ -30,97 +29,97 @@ export async function seedDatabase(): Promise<void> {
       password_hash: passwordHash,
       role: 'superadmin',
     });
-    console.log(`[Seed] Initial admin account initialized: username="${defaultUsername}", password="${defaultPassword}"`);
+    console.log(`[Seed] Initial superadmin account initialized: username="${defaultUsername}"`);
   }
 
-  // 2. Initial products: Products are managed dynamically via Admin Console.
-  // Bridged games (e.g. Arrow Puzzle) are automatically surfaced from Game Catalog.
-
-  // 3. Check if initial game catalog seeding has already occurred
+  // 2. Ensure studio settings are initialized
   const settings = db.getSettings();
-  if (settings.initial_seeded) {
-    // Database has already completed initial seeding. Never resurrect intentionally deleted games.
+  if (!settings || !settings.studio_name) {
+    db.updateSettings({
+      studio_name: 'Karsh Tech',
+      tagline: 'Turning Ideas into Digital Reality',
+      contact_email: 'karshhtech@gmail.com',
+      updated_at: new Date().toISOString(),
+      initial_seeded: true,
+    });
+  }
+
+  // 3. Ensure bundled avatars are copied to active uploads directory if missing
+  try {
+    const repoImagesDir = path.join(DEFAULT_REPO_UPLOADS_DIR, 'images');
+    if (fs.existsSync(repoImagesDir)) {
+      const avatars = ['avatar_harsh.png', 'avatar_aditya.png', 'avatar_komal.png'];
+      for (const av of avatars) {
+        const src = path.join(repoImagesDir, av);
+        const dest = path.join(IMAGES_DIR, av);
+        if (fs.existsSync(src) && !fs.existsSync(dest)) {
+          fs.copyFileSync(src, dest);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Seed] Warning copying default avatars:', err);
+  }
+
+  // 4. DEMO DATA SEEDING SAFEGUARD:
+  // Production data MUST NEVER be overwritten or seeded with dummy records on container restarts.
+  // Demo games and placeholder releases are ONLY seeded if:
+  // - NODE_ENV is NOT 'production'
+  // - SEED_DEMO_DATA is explicitly 'true'
+  // - initial_seeded is not yet true
+  // - games list is completely empty
+  const isProduction = process.env.NODE_ENV === 'production';
+  const explicitDemoRequested = process.env.SEED_DEMO_DATA === 'true';
+
+  if (isProduction || !explicitDemoRequested) {
+    if (!settings.initial_seeded) {
+      db.updateSettings({ initial_seeded: true });
+    }
     return;
   }
 
-  // 4. Seed Arrow Puzzle for initial first-time catalog setup
-  const existingArrow = db.getGameBySlug('arrow-puzzle');
-  if (!existingArrow) {
-    console.log('[Seed] Seeding Arrow Puzzle with verified assets...');
+  // If initial seeding has already been recorded, never resurrect deleted records
+  if (settings.initial_seeded) {
+    return;
+  }
 
-    let apkFileSize = 2514510; // Default exact size
+  // Only seed demo game if game catalog is empty
+  const existingGames = db.getGames();
+  if (existingGames.length === 0) {
+    console.log('[Seed] Seeding initial developer demo Arrow Puzzle game (explicitly enabled)...');
+
     const apkFilename = 'arrow-puzzle-release-v1.0.0.apk';
     const targetApkPath = path.join(APKS_DIR, apkFilename);
+    const repoApk = path.join(DEFAULT_REPO_UPLOADS_DIR, 'apks', apkFilename);
 
-    // Copy real release APK if present on disk
-    const realApkSource = path.join(ARROW_PUZZLE_SRC, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
-    if (fs.existsSync(realApkSource)) {
+    let apkFileSize = 2885749;
+    if (fs.existsSync(repoApk)) {
       try {
-        fs.copyFileSync(realApkSource, targetApkPath);
-        const stat = fs.statSync(targetApkPath);
-        apkFileSize = stat.size;
-        console.log(`[Seed] Successfully copied signed release APK (${(apkFileSize / 1024 / 1024).toFixed(2)} MB)`);
-      } catch (err) {
-        console.warn('[Seed] Warning copying release APK:', err);
-      }
-    } else {
-      // If not found at that exact path, create a valid binary placeholder or check debug apk
-      if (!fs.existsSync(targetApkPath)) {
-        fs.writeFileSync(targetApkPath, Buffer.alloc(apkFileSize, 0));
-      }
-    }
-
-    // Copy screenshots if present
-    const screenshotsList: string[] = [];
-    let coverImage = '/uploads/images/arrow_puzzle_cover.jpg';
-    const realScreenshotsDir = path.join(ARROW_PUZZLE_SRC, 'screenshots');
-
-    if (fs.existsSync(realScreenshotsDir)) {
-      try {
-        const files = fs.readdirSync(realScreenshotsDir).filter(f => f.endsWith('.jpg') || f.endsWith('.png'));
-        files.slice(0, 6).forEach((file, idx) => {
-          const srcPath = path.join(realScreenshotsDir, file);
-          const destName = `arrow_puzzle_screenshot_${idx + 1}.jpg`;
-          const destPath = path.join(IMAGES_DIR, destName);
-          fs.copyFileSync(srcPath, destPath);
-          screenshotsList.push(`/uploads/images/${destName}`);
-        });
-
-        if (screenshotsList.length > 0) {
-          coverImage = screenshotsList[0];
+        if (!fs.existsSync(targetApkPath)) {
+          fs.copyFileSync(repoApk, targetApkPath);
         }
+        apkFileSize = fs.statSync(targetApkPath).size;
       } catch (err) {
-        console.warn('[Seed] Warning copying screenshots:', err);
+        console.warn('[Seed] Warning copying repo demo APK:', err);
       }
     }
 
-    // Also check for team avatars
-    const realAvatarsDir = path.join(ARROW_PUZZLE_SRC, 'scratch', 'avatar_final');
-    if (fs.existsSync(realAvatarsDir)) {
-      try {
-        const avatars = ['avatar_harsh.png', 'avatar_aditya.png', 'avatar_komal.png'];
-        avatars.forEach(av => {
-          const avSrc = path.join(realAvatarsDir, av);
-          if (fs.existsSync(avSrc)) {
-            fs.copyFileSync(avSrc, path.join(IMAGES_DIR, av));
-          }
-        });
-      } catch (err) {
-        console.warn('[Seed] Warning copying avatars:', err);
-      }
-    }
+    const coverImage = '/uploads/images/arrow_puzzle_screenshot_1.jpg';
+    const screenshotsList = [
+      '/uploads/images/arrow_puzzle_screenshot_1.jpg',
+      '/uploads/images/arrow_puzzle_screenshot_2.jpg',
+      '/uploads/images/arrow_puzzle_screenshot_3.jpg',
+      '/uploads/images/arrow_puzzle_screenshot_4.jpg',
+      '/uploads/images/arrow_puzzle_screenshot_5.jpg',
+      '/uploads/images/arrow_puzzle_screenshot_6.jpg',
+    ];
 
-    // Fallback screenshots if none were copied
-    if (screenshotsList.length === 0) {
-      screenshotsList.push('/uploads/images/arrow_puzzle_cover.jpg');
-    }
-
-    // Create Game
     const createdGame = db.createGame({
       title: 'Arrow Puzzle',
       slug: 'arrow-puzzle',
       tagline: 'A Calming, Tactile Logic Puzzle for Mindful Spatial Focus',
-      description: 'Arrow Puzzle is an addictive logic game for Android where players clear a dense board of interlocking arrows by inspecting corridors and safely releasing unobstructed paths. Featuring a clean porcelain visual aesthetic, tactile haptic feedback, and hundreds of escalating spatial challenges.',
+      description:
+        'Arrow Puzzle is an addictive logic game for Android where players clear a dense board of interlocking arrows by inspecting corridors and safely releasing unobstructed paths. Featuring a clean porcelain visual aesthetic, tactile haptic feedback, and hundreds of escalating spatial challenges.',
       genre: ['Puzzle', 'Logic', 'Casual', 'Brain Training'],
       platforms: ['Android'],
       status: 'Available',
@@ -133,47 +132,47 @@ export async function seedDatabase(): Promise<void> {
         'Spatial Reasoning Challenge: Progressive board layouts with complex bends, zigzags, and U-turns',
         'Calming Minimalist Aesthetics: Clean porcelain surfaces, soothing color palettes, and fluid motion',
         '100% Offline-First Architecture: Play seamlessly on the go without requiring internet access',
-        'Optimized Android Performance: Native Jetpack Compose rendering running at smooth 60+ FPS'
+        'Optimized Android Performance: Native Jetpack Compose rendering running at smooth 60+ FPS',
       ],
       controls: [
         'Inspect the board to identify arrows with unobstructed escape routes',
         'Tap a free arrow to watch it slide smoothly off the game grid',
         'Avoid tapping blocked arrows to prevent collision feedback',
-        'Clear all arrows sequentially to advance to the next puzzle level'
+        'Clear all arrows sequentially to advance to the next puzzle level',
       ],
       requirements: {
         min_android: 'Android 8.0 (Oreo, API level 26)',
         target_android: 'Android 15 (API level 35)',
         storage: '25 MB free storage space',
         ram: '2 GB RAM or higher',
-        internet: 'None required (100% Offline)'
+        internet: 'None required (100% Offline)',
       },
       developer: 'Karsh Tech Studio',
     });
 
-    // Create Initial Release v1.0.0
     const release = db.createRelease({
       game_id: createdGame.id,
       version_name: '1.0.0',
       version_code: 1,
       release_date: '2026-10-24',
-      release_notes: 'Initial production release of Arrow Puzzle. Features over 100 hand-crafted spatial logic levels, full offline gameplay, optimized touch response, and fluid Jetpack Compose physics animations.',
+      release_notes:
+        'Initial production release of Arrow Puzzle. Features over 100 hand-crafted spatial logic levels, full offline gameplay, optimized touch response, and fluid Jetpack Compose physics animations.',
       apk_filename: apkFilename,
+      original_filename: apkFilename,
       apk_file_size: apkFileSize,
-      apk_download_url: '', // set below
+      apk_download_url: '',
       min_sdk: 26,
       target_sdk: 35,
       is_published: true,
     });
 
-    // Update release download URL
     db.updateRelease(release.id, {
       apk_download_url: `/api/releases/${release.id}/download`,
     });
 
-    console.log(`[Seed] Arrow Puzzle v1.0.0 seeded successfully with release ID: ${release.id}`);
+    console.log(`[Seed] Demo Arrow Puzzle seeded with ID: ${createdGame.id}`);
   }
 
-  // Mark initial seeding complete to protect subsequent deletions across restarts
+  // Mark initial seeding complete so demo data is never regenerated
   db.updateSettings({ initial_seeded: true });
 }

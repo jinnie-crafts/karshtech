@@ -17,6 +17,7 @@ export interface Release {
   release_date: string;
   release_notes: string;
   apk_filename: string;
+  original_filename?: string;
   apk_file_size: number;
   apk_download_url: string;
   min_sdk: number;

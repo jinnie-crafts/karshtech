@@ -295,7 +295,14 @@ class ApiClient {
     return data;
   }
 
-  public async uploadApk(file: File): Promise<{ success: boolean; filename: string; size: number }> {
+  public async uploadApk(file: File): Promise<{
+    success: boolean;
+    filename: string;
+    stored_filename?: string;
+    original_filename: string;
+    original_name?: string;
+    size: number;
+  }> {
     const formData = new FormData();
     formData.append('apk', file);
 

@@ -22,6 +22,7 @@ out/
 
 # Server runtime data & dynamic uploads
 server/data/*.json
+server/data/backups/
 !server/data/.gitkeep
 server/uploads/*
 !server/uploads/images/

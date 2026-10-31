@@ -24,6 +24,9 @@ try {
   const releasesSuite = await import('./test_releases_workflow.mjs');
   await releasesSuite.run();
 
+  const persistenceSuite = await import('./test_persistence.mjs');
+  await persistenceSuite.run();
+
   console.log('\n[Test Runner] ALL SUITES PASSED WITH 100% SUCCESS!');
   process.exit(0);
 } catch (err) {
