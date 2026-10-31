@@ -21,11 +21,13 @@ export const JWT_ALGORITHM = 'HS256';
 // Ephemeral fallback key generated once per boot exclusively for local dev if JWT_SECRET is unset
 let devEphemeralSecret: string | null = null;
 function getDevSecret(): string {
-  if (!devEphemeralSecret) {
-    devEphemeralSecret = crypto.randomBytes(64).toString('hex');
-    console.warn('[AUTH SECURITY] No JWT_SECRET set in environment; generated an ephemeral 64-byte random key for this session.');
+  if (devEphemeralSecret) {
+    return devEphemeralSecret;
   }
-  return devEphemeralSecret;
+  const secret = crypto.randomBytes(64).toString('hex');
+  devEphemeralSecret = secret;
+  console.warn('[AUTH SECURITY] No JWT_SECRET set in environment; generated an ephemeral 64-byte random key for this session.');
+  return secret;
 }
 
 export function getJwtSecret(): string {
