@@ -33,31 +33,30 @@ export const StudioPage: React.FC = () => {
           Aditya: data.media.avatars.aditya,
         });
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
   const teamMembers = [
     {
       name: 'Harsh',
-      role: 'Founder & Lead Systems Engineer',
+      role: 'Founder & Lead Engineer',
       avatar: '/uploads/images/avatar_harsh.png?v=1.0.1',
-      focus: 'Architecture, Systems Design, React & Android Jetpack Compose',
-      bio: 'Leads engineering architecture and technical execution across Karsh Tech platforms and products, ensuring sub-16ms latency, durable databases, and clean codebases.',
+      focus: 'Engineering Leadership, System Architecture, Full-Stack Development',
+      bio: 'Founded Karsh Tech with a vision to build meaningful digital products. Leads engineering architecture, technical strategy, and end-to-end product development across web, mobile, and software platforms.'
     },
     {
       name: 'Komal',
-      role: 'UI/UX & Product Designer',
+      role: 'Developer & UI/UX Designer',
       avatar: '/uploads/images/avatar_komal.png?v=1.0.1',
-      focus: 'Design Systems, Motion Dynamics, Ergonomics & Accessibility',
-      bio: 'Shapes the cinematic visual identity, typography scales, responsive layouts, and restrained micro-interactions that make Karsh Tech interfaces intuitive.',
+      focus: 'UI/UX Design, Frontend Development, Product Experience',
+      bio: 'Bridges design and development to create intuitive, visually refined digital experiences. Focuses on user-centered interfaces, responsive layouts, design systems, and turning ideas into functional products.'
     },
     {
       name: 'Aditya',
-      role: 'Systems & Logic Designer',
+      role: 'Development Contributor',
       avatar: '/uploads/images/avatar_aditya.png?v=1.0.1',
-      focus: 'Algorithmic Problem-Solving, Data Schemas, Game Mechanics',
-      bio: 'Designs system logic, API workflows, and progressive puzzle algorithms that ensure deterministic solvability and reliable application behavior.',
+      focus: 'Development Support, System Logic, Problem-Solving',
+      bio: 'Contributes to the development of Karsh Tech products through technical collaboration, logical problem-solving, and implementation support, helping transform concepts into reliable digital solutions.'
     },
-    
   ];
 
   return (
