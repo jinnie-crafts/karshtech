@@ -28,6 +28,7 @@ import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminProductsPage } from './pages/admin/AdminProductsPage';
 import { AdminGamesPage } from './pages/admin/AdminGamesPage';
 import { AdminReleasesPage } from './pages/admin/AdminReleasesPage';
+import { AdminMediaPage } from './pages/admin/AdminMediaPage';
 import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
 
 const AppContent: React.FC = () => {
@@ -76,6 +77,9 @@ const AppContent: React.FC = () => {
   }
   if (normalizedPath === '/admin/releases') {
     return <AdminReleasesPage />;
+  }
+  if (normalizedPath === '/admin/media') {
+    return <AdminMediaPage />;
   }
   if (normalizedPath === '/admin/settings') {
     return <AdminSettingsPage />;

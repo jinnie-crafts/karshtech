@@ -13,6 +13,7 @@ import {
   X,
   Plus,
   Package,
+  Images,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -47,6 +48,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { label: 'Products', href: '/admin/products', icon: Package },
     { label: 'Game Catalog', href: '/admin/games', icon: Gamepad2 },
     { label: 'Releases & APKs', href: '/admin/releases', icon: UploadCloud },
+    { label: 'Media Library', href: '/admin/media', icon: Images },
     { label: 'Studio Settings', href: '/admin/settings', icon: Settings },
   ];
 

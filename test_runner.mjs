@@ -4,7 +4,8 @@ if (typeof process.loadEnvFile === 'function') {
   } catch {}
 }
 
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'bd1db785e67e77696c8bd980f162806b70ac4d2390dfbe59ccc7ce24797e5ab7698da9c5a9b55e0f2f1e03ed1e497959621611f439c926729bf74f8067680f1f';
+process.env.DB_PROVIDER = process.env.DB_PROVIDER || 'json';
+process.env.TEST_JWT_SECRET = process.env.TEST_JWT_SECRET || 'test_jwt_secret_dev_only_not_for_production_min32chars_test';
 
 // Start the server directly within the test runner process
 console.log('[Test Runner] Starting server...');

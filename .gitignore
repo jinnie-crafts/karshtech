@@ -10,15 +10,28 @@ build/
 out/
 *.tsbuildinfo
 
-# Environment variables & secrets
+# Environment variables & secrets (STRICT EXCLUSION — No exceptions)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 *.env
-!*.env.example
-!.env.example
+*.env.*
+*.local
+.env.local
+.env.production
+.env.production.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+
+# Credentials, keys & service accounts
+*.pem
+*.key
+*.cert
+*.crt
+*service-account*.json
+*service_account*.json
+*credentials*.json
 
 # Server runtime data & dynamic uploads
 server/data/*.json
@@ -32,6 +45,17 @@ server/uploads/images/*
 # Large binary artifacts & APK releases
 *.apk
 *.aab
+
+# Local backups and migration archives
+backups/
+
+# Local scratch, debug and temporary test runners
+scratch/
+test_postgres_*.mjs
+test_provider_selection.mjs
+
+# Docker local data & test containers
+karsh-tech-test-postgres-data/
 
 # Logs
 logs/

@@ -1,0 +1,24 @@
+services:
+  test-postgres:
+    image: postgres:16-alpine
+    container_name: karsh-tech-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: karsh_tech_test
+      POSTGRES_USER: karsh_test_user
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-KarshTestSecurePassword2026!}
+    ports:
+      # Bound strictly to 127.0.0.1 (localhost only) on host port 5433
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - karsh-tech-test-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U karsh_test_user -d karsh_tech_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  karsh-tech-test-postgres-data:
+    name: karsh-tech-test-postgres-data

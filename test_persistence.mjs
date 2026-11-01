@@ -65,12 +65,15 @@ export async function run() {
   // Test 3: Verify atomic write and database file existence
   try {
     const { db } = await import('./server/db.js');
-    const storageInfo = db.getStorageInfo();
+    const storageInfo = await db.getStorageInfo();
     const dbExists = fs.existsSync(storageInfo.dbFile);
     assert(3, 'db.json exists at resolved data directory', dbExists, `dbFile: ${storageInfo.dbFile}`);
 
-    // Verify atomic backup creation
-    const backupFile = db.createBackup('unit_test');
+    // Verify atomic backup creation (for JSON provider)
+    let backupFile = null;
+    if (typeof db.createBackup === 'function') {
+      backupFile = db.createBackup('unit_test');
+    }
     const backupExists = backupFile && fs.existsSync(backupFile);
     assert(4, 'db.createBackup() creates timestamped backup in backups directory', Boolean(backupExists), `backupFile: ${backupFile}`);
 
@@ -88,14 +91,14 @@ export async function run() {
     const { seedDatabase } = await import('./server/seed.js');
     const { db } = await import('./server/db.js');
     
-    // Create a temporary mock scenario or inspect settings
-    const settings = db.getSettings();
+    // Inspect settings
+    const settings = await db.getSettings();
     assert(5, 'Settings has initial_seeded flag set to prevent dummy data resurrections', settings.initial_seeded === true, `initial_seeded: ${settings.initial_seeded}`);
 
     // Call seedDatabase() and ensure existing games count did not arbitrarily explode with dummy records
-    const countBefore = db.getGames().length;
+    const countBefore = (await db.getGames()).length;
     await seedDatabase();
-    const countAfter = db.getGames().length;
+    const countAfter = (await db.getGames()).length;
     assert(6, 'Re-executing seedDatabase() does NOT recreate or duplicate games', countBefore === countAfter, `Before: ${countBefore}, After: ${countAfter}`);
   } catch (err) {
     assert(5, 'Settings has initial_seeded flag set', false, err.message);
@@ -106,10 +109,6 @@ export async function run() {
   try {
     const gamesRes = await fetchJson(`${BASE_URL}/api/games`);
     const games = gamesRes.data?.games || [];
-    const featuredGames = games.filter(g => g.featured);
-    const nonFeaturedGames = games.filter(g => !g.featured);
-    
-    // In our public API, only games with featured === true should be identified as featured
     assert(7, 'Public API delivers game list correctly', gamesRes.status === 200, `Games count: ${games.length}`);
   } catch (err) {
     assert(7, 'Public API delivers game list correctly', false, err.message);

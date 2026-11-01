@@ -93,3 +93,43 @@ export interface DashboardStats {
   published_products?: number;
   draft_products?: number;
 }
+
+
+// Media & Asset Manager (Phase 4.3.6)
+export type MediaBucket = 'game-assets' | 'product-assets' | 'release-apks';
+
+export interface MediaReference {
+  type: 'game' | 'product' | 'release';
+  id: string;
+  title: string;
+  field: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  name: string;
+  path: string;
+  bucket: MediaBucket;
+  size: number;
+  contentType: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string | null;
+  visibility: 'public' | 'private';
+  is_referenced: boolean;
+  is_protected: boolean;
+  referenced_by: MediaReference[];
+}
+
+export interface MediaStats {
+  total_assets: number;
+  image_assets: number;
+  game_images: number;
+  product_images: number;
+  apk_releases: number;
+  total_storage_bytes: number;
+  storage_by_bucket: Record<
+    MediaBucket,
+    { count: number; bytes: number; visibility: 'public' | 'private' }
+  >;
+}

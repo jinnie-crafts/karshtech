@@ -1,3 +1,9 @@
+if (typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile();
+  } catch {}
+}
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -25,9 +31,22 @@ import {
   ensureStorageDirectories,
   IS_PERSISTENT_STORAGE,
 } from './paths.js';
+import {
+  createStorageService,
+  setStorageService,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_APK_SIZE_BYTES,
+  ALLOWED_IMAGE_EXTENSIONS,
+  PROTECTED_STORAGE_OBJECTS,
+  validateImageBuffer,
+  validateApkBuffer,
+  generateObjectPath,
+  type StorageBucket,
+} from './storage/index.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const storageService = createStorageService();
 
 ensureStorageDirectories();
 
@@ -49,7 +68,7 @@ app.use(
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error('CORS policy: Origin not allowed'));
+        callback(null, false);
       }
     },
     credentials: true,
@@ -76,42 +95,87 @@ app.use('/api/admin', (req, res, next) => {
   next();
 });
 
-// Static file serving for uploads
+// Legacy URL backward compatibility:
+// If an image requested via /uploads/images/:filename is not present on local disk,
+// redirect (HTTP 302) to the canonical Supabase Storage public CDN URL.
+app.get('/uploads/images/:filename', (req, res, next) => {
+  const rawFilename = req.params.filename || '';
+
+  // Security check: reject empty filenames, null bytes, path traversal sequences, and slashes
+  if (
+    !rawFilename ||
+    rawFilename.includes('\0') ||
+    rawFilename.includes('/') ||
+    rawFilename.includes('\\') ||
+    rawFilename.includes('..') ||
+    rawFilename.includes('%2e') ||
+    rawFilename.includes('%2E') ||
+    rawFilename.includes('%2f') ||
+    rawFilename.includes('%2F') ||
+    rawFilename.includes('%5c') ||
+    rawFilename.includes('%5C')
+  ) {
+    return res.status(400).json({ error: 'Invalid or unsafe image filename' });
+  }
+
+  const safeFilename = path.basename(rawFilename);
+  if (safeFilename !== rawFilename) {
+    return res.status(400).json({ error: 'Invalid image filename' });
+  }
+
+  const resolvedImagesDir = path.resolve(IMAGES_DIR);
+  const localFile = path.resolve(resolvedImagesDir, safeFilename);
+
+  // Guarantee that resolved path remains strictly within IMAGES_DIR
+  if (!localFile.startsWith(resolvedImagesDir)) {
+    return res.status(400).json({ error: 'Path traversal attempt detected' });
+  }
+
+  if (fs.existsSync(localFile)) {
+    return next();
+  }
+
+  try {
+    const publicUrl = storageService.getPublicUrl('game-assets', safeFilename);
+    return res.redirect(302, publicUrl);
+  } catch {
+    next();
+  }
+});
+
+// Static file serving for uploads (local disk uploads preserved for development/fallback)
 app.use('/uploads', express.static(UPLOADS_DIR));
 if (path.resolve(UPLOADS_DIR) !== path.resolve(DEFAULT_REPO_UPLOADS_DIR) && fs.existsSync(DEFAULT_REPO_UPLOADS_DIR)) {
   app.use('/uploads', express.static(DEFAULT_REPO_UPLOADS_DIR));
 }
 
-// Configure Multer for Image Uploads
-const imageStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, IMAGES_DIR);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const safeBase = path
-      .basename(file.originalname, ext)
-      .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .substring(0, 30);
-    const uniqueName = `${safeBase}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}${ext}`;
-    cb(null, uniqueName);
-  },
-});
-
-const uploadImage = multer({
-  storage: imageStorage,
-  limits: { fileSize: 12 * 1024 * 1024 }, // 12 MB
+// Configure Multer with memory storage for bounded buffers
+const uploadImageMulter = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_IMAGE_SIZE_BYTES, files: 1 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid image file type. Allowed: PNG, JPG, JPEG, WEBP, SVG'));
+      cb(new Error('Invalid image file type. Allowed: PNG, JPG, JPEG, WEBP, GIF'));
     }
   },
 });
 
+function handleImageUpload(req: express.Request, res: express.Response, next: express.NextFunction) {
+  uploadImageMulter.single('image')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Image exceeds maximum allowed size of 15 MB' });
+      }
+      return res.status(400).json({ error: `Upload error: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message || 'Invalid upload' });
+    }
+    next();
+  });
+}
 
 export function sanitizeOriginalFilename(rawName: string | undefined, fallbackStoredName?: string): string {
   let name = (rawName || '').trim();
@@ -152,30 +216,12 @@ export function formatContentDisposition(filename: string): string {
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedUtf8}`;
 }
 
-// Configure Multer for APK Uploads
-const apkStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, APKS_DIR);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.apk';
-    const safeBase = path
-      .basename(file.originalname, ext)
-      .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .substring(0, 40)
-      .replace(/^_+|_+$/g, '');
-    const prefix = safeBase || 'release';
-    const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const uniqueName = `${prefix}_${uniqueSuffix}${ext}`;
-    cb(null, uniqueName);
-  },
-});
-
-const uploadApk = multer({
-  storage: apkStorage,
-  limits: { fileSize: 150 * 1024 * 1024 }, // 150 MB max APK size
+// Configure Multer for APK Uploads (memory storage, 50 MB limit)
+const uploadApkMulter = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_APK_SIZE_BYTES, files: 1 },
   fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = path.extname(file.originalname || '').toLowerCase();
     if (ext === '.apk') {
       cb(null, true);
     } else {
@@ -184,14 +230,28 @@ const uploadApk = multer({
   },
 });
 
+function handleApkUpload(req: express.Request, res: express.Response, next: express.NextFunction) {
+  uploadApkMulter.single('apk')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'APK file exceeds maximum allowed size of 50 MB on Supabase Free' });
+      }
+      return res.status(400).json({ error: `Upload error: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message || 'Invalid upload' });
+    }
+    next();
+  });
+}
+
 // ==========================================
 // PUBLIC API ENDPOINTS
 // ==========================================
 
 // GET /api/games - Public catalog
-app.get('/api/games', (req, res) => {
+app.get('/api/games', async (req, res) => {
   try {
-    let games = db.getGames();
+    let games = await db.getGames();
 
     // Filters
     const { genre, platform, status, search, featured } = req.query;
@@ -224,13 +284,15 @@ app.get('/api/games', (req, res) => {
     }
 
     // Attach latest release info to each game
-    const populated = games.map((game) => {
-      const latestRelease = db.getLatestReleaseByGameId(game.id, true);
-      return {
-        ...game,
-        latest_release: latestRelease || undefined,
-      };
-    });
+    const populated = await Promise.all(
+      games.map(async (game) => {
+        const latestRelease = await db.getLatestReleaseByGameId(game.id, true);
+        return {
+          ...game,
+          latest_release: latestRelease || undefined,
+        };
+      })
+    );
 
     res.json({ games: populated });
   } catch (err: any) {
@@ -239,19 +301,22 @@ app.get('/api/games', (req, res) => {
 });
 
 // GET /api/games/:slug - Detailed game info
-app.get('/api/games/:slug', (req, res) => {
+app.get('/api/games/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    const game = db.getGameBySlug(slug);
+    const game = await db.getGameBySlug(slug);
 
     if (!game) {
       res.status(404).json({ error: 'Game not found' });
       return;
     }
 
-    const latestRelease = db.getLatestReleaseByGameId(game.id, true);
-    const allPublishedReleases = db
-      .getReleasesByGameId(game.id)
+    const [latestRelease, allReleases] = await Promise.all([
+      db.getLatestReleaseByGameId(game.id, true),
+      db.getReleasesByGameId(game.id),
+    ]);
+
+    const allPublishedReleases = allReleases
       .filter((r) => r.is_published)
       .sort((a, b) => b.version_code - a.version_code);
 
@@ -268,18 +333,19 @@ app.get('/api/games/:slug', (req, res) => {
 });
 
 // GET /api/products - Public products catalog (published only)
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   try {
-    let products = db.getProducts(false); // Published only
+    let products = await db.getProducts(false); // Published only
     const { category, search, featured, include_games } = req.query;
 
     // Bridge published games into unified products catalog under 'Games' category
     if (include_games !== 'false') {
-      const publishedGames = db.getGames().filter((g) => g.status === 'Available' || g.status === 'Updated');
+      const allGames = await db.getGames();
+      const publishedGames = allGames.filter((g) => g.status === 'Available' || g.status === 'Updated');
       for (const g of publishedGames) {
         const alreadyExists = products.some((p) => p.slug.toLowerCase() === g.slug.toLowerCase());
         if (!alreadyExists) {
-          const latestRelease = db.getLatestReleaseByGameId(g.id, true);
+          const latestRelease = await db.getLatestReleaseByGameId(g.id, true);
           products.push({
             id: g.id,
             name: g.title,
@@ -341,16 +407,16 @@ app.get('/api/products', (req, res) => {
 });
 
 // GET /api/products/:slug - Public product details
-app.get('/api/products/:slug', (req, res) => {
+app.get('/api/products/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    let product = db.getProductBySlug(slug, false);
+    let product = await db.getProductBySlug(slug, false);
 
     // If not in products collection, check if it's a published game
     if (!product) {
-      const game = db.getGameBySlug(slug);
+      const game = await db.getGameBySlug(slug);
       if (game && (game.status === 'Available' || game.status === 'Updated')) {
-        const latestRelease = db.getLatestReleaseByGameId(game.id, true);
+        const latestRelease = await db.getLatestReleaseByGameId(game.id, true);
         product = {
           id: game.id,
           name: game.title,
@@ -386,10 +452,10 @@ app.get('/api/products/:slug', (req, res) => {
 });
 
 // GET /api/releases/:id/download - Stream/download release APK
-app.get('/api/releases/:id/download', (req, res) => {
+app.get('/api/releases/:id/download', async (req, res) => {
   try {
     const { id } = req.params;
-    const release = db.getReleaseById(id);
+    const release = await db.getReleaseById(id);
 
     if (!release) {
       res.status(404).json({ error: 'Release not found' });
@@ -401,42 +467,86 @@ app.get('/api/releases/:id/download', (req, res) => {
       return;
     }
 
-    const apkPath = path.join(APKS_DIR, release.apk_filename);
-    if (!fs.existsSync(apkPath)) {
+    // Step 1: Check Supabase Storage first for the APK object
+    let storageMetadata = null;
+    try {
+      storageMetadata = await storageService.getObjectMetadata('release-apks', release.apk_filename);
+    } catch (err: any) {
+      console.warn(`[Storage Warning] Error checking metadata for ${release.apk_filename}:`, err.message);
+    }
+
+    const localApkPath = path.join(APKS_DIR, release.apk_filename);
+    const existsLocally = fs.existsSync(localApkPath);
+
+    if (!storageMetadata && !existsLocally) {
       res.status(404).json({ error: 'Release file is missing on storage' });
       return;
     }
 
-    // Increment download counter
-    db.incrementDownload(release.id);
-
-    // Stream download with RFC 6266 / RFC 5987 compliant Content-Disposition
+    // Format RFC 6266 / RFC 5987 compliant Content-Disposition
     const downloadFilename = sanitizeOriginalFilename(release.original_filename, release.apk_filename);
     const contentDisposition = formatContentDisposition(downloadFilename);
 
+    // If available in Supabase Storage, stream directly from private Storage
+    if (storageMetadata) {
+      const download = await storageService.downloadPrivate('release-apks', release.apk_filename);
+
+      // Successfully initialized storage stream: atomically increment download counter
+      await db.incrementDownload(release.id);
+
+      res.setHeader('Content-Disposition', contentDisposition);
+      res.setHeader('Content-Type', download.contentType || 'application/vnd.android.package-archive');
+      if (download.contentLength) {
+        res.setHeader('Content-Length', download.contentLength.toString());
+      }
+      if (download.eTag) {
+        res.setHeader('ETag', download.eTag);
+      }
+      res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+
+      download.stream.on('error', (_streamErr: any) => {
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Download stream error' });
+        }
+      });
+
+      download.stream.pipe(res);
+      return;
+    }
+
+    // Fallback: local disk file (dev environment without Supabase Storage)
+    await db.incrementDownload(release.id);
     res.setHeader('Content-Disposition', contentDisposition);
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-
-    res.sendFile(apkPath, {
-      headers: {
-        'Content-Disposition': contentDisposition,
+    res.sendFile(
+      localApkPath,
+      {
+        headers: {
+          'Content-Disposition': contentDisposition,
+        },
       },
-    }, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ error: 'Download failed during transfer' });
+      (err) => {
+        if (err && !res.headersSent) {
+          res.status(500).json({ error: 'Download failed during transfer' });
+        }
       }
-    });
+    );
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Download error' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || 'Download error' });
+    }
   }
 });
 
 // GET /api/stats - Public studio stats
-app.get('/api/stats', (_req, res) => {
+app.get('/api/stats', async (_req, res) => {
   try {
-    const games = db.getGames();
-    const releases = db.getReleases();
-    const products = db.getProducts(true);
+    const [games, releases, products, settings] = await Promise.all([
+      db.getGames(),
+      db.getReleases(),
+      db.getProducts(true),
+      db.getSettings(),
+    ]);
     const totalDownloads = releases.reduce((sum, r) => sum + (r.download_count || 0), 0);
 
     res.json({
@@ -449,7 +559,7 @@ app.get('/api/stats', (_req, res) => {
         published_products: products.filter((p) => p.status === 'Published').length,
         draft_products: products.filter((p) => p.status === 'Draft').length,
       },
-      settings: db.getSettings(),
+      settings,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -473,61 +583,108 @@ app.post(['/api/support', '/api/contact'], (req, res) => {
 // ==========================================
 const DOMAIN = process.env.PRODUCTION_DOMAIN || 'https://tech.aadirishi.in';
 
+function escapeXml(unsafe: string): string {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '&':
+        return '&amp;';
+      case '\'':
+        return '&apos;';
+      case '"':
+        return '&quot;';
+      default:
+        return c;
+    }
+  });
+}
+
+function getReliableLastmod(dateStr?: string | null): string | undefined {
+  if (!dateStr || typeof dateStr !== 'string') return undefined;
+  const parsed = Date.parse(dateStr);
+  if (isNaN(parsed)) return undefined;
+  return new Date(parsed).toISOString().split('T')[0];
+}
+
 // GET /sitemap.xml - Dynamic XML Sitemap
-app.get('/sitemap.xml', (_req, res) => {
-  const games = db.getGames();
-  interface SitemapEntry {
-    loc: string;
-    priority: string;
-    changefreq: string;
-    lastmod?: string;
-  }
+app.get('/sitemap.xml', async (_req, res) => {
+  try {
+    const [games, publishedProducts] = await Promise.all([
+      db.getGames(),
+      db.getProducts(false),
+    ]);
 
-  const staticUrls: SitemapEntry[] = [
-    { loc: `${DOMAIN}/`, priority: '1.0', changefreq: 'daily' },
-    { loc: `${DOMAIN}/products`, priority: '0.9', changefreq: 'weekly' },
-    { loc: `${DOMAIN}/services`, priority: '0.9', changefreq: 'weekly' },
-    { loc: `${DOMAIN}/portfolio`, priority: '0.8', changefreq: 'weekly' },
-    { loc: `${DOMAIN}/games`, priority: '0.8', changefreq: 'weekly' },
-    { loc: `${DOMAIN}/studio`, priority: '0.8', changefreq: 'weekly' },
-    { loc: `${DOMAIN}/contact`, priority: '0.8', changefreq: 'monthly' },
-    { loc: `${DOMAIN}/support`, priority: '0.7', changefreq: 'monthly' },
-    { loc: `${DOMAIN}/privacy`, priority: '0.5', changefreq: 'monthly' },
-    { loc: `${DOMAIN}/terms`, priority: '0.5', changefreq: 'monthly' },
-  ];
+    interface SitemapEntry {
+      loc: string;
+      lastmod?: string;
+      changefreq?: string;
+      priority?: string;
+    }
 
-  const publishedProducts = db.getProducts(false);
-  const productUrls: SitemapEntry[] = publishedProducts.map((p) => ({
-    loc: `${DOMAIN}/products/${encodeURIComponent(p.slug)}`,
-    lastmod: (p.updated_at || p.created_at || new Date().toISOString()).split('T')[0],
-    priority: '0.8',
-    changefreq: 'weekly',
-  }));
+    const staticUrls: SitemapEntry[] = [
+      { loc: `${DOMAIN}/`, priority: '1.0', changefreq: 'daily' },
+      { loc: `${DOMAIN}/products`, priority: '0.9', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/services`, priority: '0.9', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/portfolio`, priority: '0.8', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/games`, priority: '0.8', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/studio`, priority: '0.8', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/contact`, priority: '0.8', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/support`, priority: '0.7', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/privacy`, priority: '0.5', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/terms`, priority: '0.5', changefreq: 'monthly' },
+    ];
 
-  const gameUrls: SitemapEntry[] = games.map((game) => ({
-    loc: `${DOMAIN}/games/${encodeURIComponent(game.slug)}`,
-    lastmod: (game.updated_at || game.created_at || new Date().toISOString()).split('T')[0],
-    priority: '0.8',
-    changefreq: 'weekly',
-  }));
+    const productUrls: SitemapEntry[] = publishedProducts
+      .filter((p) => p && p.slug)
+      .map((p) => ({
+        loc: `${DOMAIN}/products/${encodeURIComponent(p.slug)}`,
+        lastmod: getReliableLastmod(p.updated_at || p.created_at),
+        priority: '0.8',
+        changefreq: 'weekly',
+      }));
 
-  const allUrls = [...staticUrls, ...productUrls, ...gameUrls];
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+    const gameUrls: SitemapEntry[] = games
+      .filter((g) => g && g.slug)
+      .map((game) => ({
+        loc: `${DOMAIN}/games/${encodeURIComponent(game.slug)}`,
+        lastmod: getReliableLastmod(game.updated_at || game.created_at),
+        priority: '0.8',
+        changefreq: 'weekly',
+      }));
+
+    // Deduplicate URLs while preserving order
+    const seenLocs = new Set<string>();
+    const deduplicatedUrls: SitemapEntry[] = [];
+    for (const entry of [...staticUrls, ...productUrls, ...gameUrls]) {
+      if (!seenLocs.has(entry.loc)) {
+        seenLocs.add(entry.loc);
+        deduplicatedUrls.push(entry);
+      }
+    }
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${allUrls
-  .map(
-    (u) => `  <url>
-    <loc>${u.loc}</loc>
-    ${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}
-    <changefreq>${u.changefreq}</changefreq>
-    <priority>${u.priority}</priority>
-  </url>`
-  )
+${deduplicatedUrls
+  .map((u) => {
+    const lines = [
+      `    <loc>${escapeXml(u.loc)}</loc>`,
+      u.lastmod ? `    <lastmod>${escapeXml(u.lastmod)}</lastmod>` : null,
+      u.changefreq ? `    <changefreq>${escapeXml(u.changefreq)}</changefreq>` : null,
+      u.priority ? `    <priority>${escapeXml(u.priority)}</priority>` : null,
+    ].filter(Boolean);
+    return `  <url>\n${lines.join('\n')}\n  </url>`;
+  })
   .join('\n')}
 </urlset>`;
 
-  res.header('Content-Type', 'application/xml');
-  res.send(xml);
+    res.header('Content-Type', 'application/xml; charset=utf-8');
+    res.send(xml);
+  } catch (err: any) {
+    res.status(500).send('Error generating sitemap');
+  }
 });
 
 // GET /robots.txt
@@ -543,21 +700,22 @@ Disallow: /api/auth/
 
 Sitemap: ${DOMAIN}/sitemap.xml
 `;
-  res.header('Content-Type', 'text/plain');
+  res.header('Content-Type', 'text/plain; charset=utf-8');
   res.send(robots);
 });
 
 // GET /llms.txt - Generative Engine Optimization (GEO) Knowledge Document
-app.get('/llms.txt', (_req, res) => {
-  const games = db.getGames();
-  const gamesList = games
-    .map(
-      (g) =>
-        `- **${g.title}**: ${g.tagline || g.description} (Category: Games / Mobile | Platforms: ${g.platforms.join(', ')} | Status: ${g.status} | URL: ${DOMAIN}/games/${g.slug})`
-    )
-    .join('\n');
+app.get('/llms.txt', async (_req, res) => {
+  try {
+    const games = await db.getGames();
+    const gamesList = games
+      .map(
+        (g) =>
+          `- **${g.title}**: ${g.tagline || g.description} (Category: Games / Mobile | Platforms: ${g.platforms.join(', ')} | Status: ${g.status} | URL: ${DOMAIN}/games/${g.slug})`
+      )
+      .join('\n');
 
-  const content = `# Karsh Tech
+    const content = `# Karsh Tech
 > Technology & Digital Product Development Organization
 
 - **Website**: ${DOMAIN}
@@ -586,8 +744,11 @@ ${gamesList || '- Arrow Puzzle: Native Android spatial logic puzzle game.'}
 - Privacy Policy: ${DOMAIN}/privacy
 - Terms of Service: ${DOMAIN}/terms
 `;
-  res.header('Content-Type', 'text/plain; charset=utf-8');
-  res.send(content);
+    res.header('Content-Type', 'text/plain; charset=utf-8');
+    res.send(content);
+  } catch (err: any) {
+    res.status(500).send('Error generating llms.txt');
+  }
 });
 
 // ==========================================
@@ -612,7 +773,7 @@ app.post('/api/auth/login', async (req, res) => {
       return;
     }
 
-    const user = db.getUserByUsername(username);
+    const user = await db.getUserByUsername(username);
     if (!user) {
       recordFailedLogin(ip);
       res.status(401).json({ error: 'Invalid username or password' });
@@ -691,7 +852,7 @@ app.post('/api/auth/change-password', requireAdmin, async (req, res) => {
     }
 
     const newHash = await hashPassword(new_password);
-    db.updateUserPassword(user.id, newHash);
+    await db.updateUserPassword(user.id, newHash);
 
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (err: any) {
@@ -704,12 +865,25 @@ app.post('/api/auth/change-password', requireAdmin, async (req, res) => {
 // ==========================================
 
 // GET /api/admin/stats
-app.get('/api/admin/stats', requireAdmin, (_req, res) => {
+app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
   try {
-    const games = db.getGames();
-    const releases = db.getReleases();
-    const products = db.getProducts(true);
+    const [games, releases, products] = await Promise.all([
+      db.getGames(),
+      db.getReleases(),
+      db.getProducts(true),
+    ]);
     const totalDownloads = releases.reduce((sum, r) => sum + (r.download_count || 0), 0);
+
+    const recentReleasesRaw = releases.slice(-5).reverse();
+    const recent_releases = await Promise.all(
+      recentReleasesRaw.map(async (r) => {
+        const game = await db.getGameById(r.game_id);
+        return {
+          ...r,
+          game_title: game?.title || 'Unknown Game',
+        };
+      })
+    );
 
     res.json({
       stats: {
@@ -721,16 +895,7 @@ app.get('/api/admin/stats', requireAdmin, (_req, res) => {
         published_products: products.filter((p) => p.status === 'Published').length,
         draft_products: products.filter((p) => p.status === 'Draft').length,
       },
-      recent_releases: releases
-        .slice(-5)
-        .reverse()
-        .map((r) => {
-          const game = db.getGameById(r.game_id);
-          return {
-            ...r,
-            game_title: game?.title || 'Unknown Game',
-          };
-        }),
+      recent_releases,
       recent_products: products.slice(0, 5),
     });
   } catch (err: any) {
@@ -739,14 +904,22 @@ app.get('/api/admin/stats', requireAdmin, (_req, res) => {
 });
 
 // GET /api/admin/games
-app.get('/api/admin/games', requireAdmin, (_req, res) => {
+app.get('/api/admin/games', requireAdmin, async (_req, res) => {
   try {
-    const games = db.getGames();
-    const populated = games.map((g) => ({
-      ...g,
-      latest_release: db.getLatestReleaseByGameId(g.id, false),
-      releases_count: db.getReleasesByGameId(g.id).length,
-    }));
+    const games = await db.getGames();
+    const populated = await Promise.all(
+      games.map(async (g) => {
+        const [latest_release, releases] = await Promise.all([
+          db.getLatestReleaseByGameId(g.id, false),
+          db.getReleasesByGameId(g.id),
+        ]);
+        return {
+          ...g,
+          latest_release,
+          releases_count: releases.length,
+        };
+      })
+    );
     res.json({ games: populated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -754,7 +927,7 @@ app.get('/api/admin/games', requireAdmin, (_req, res) => {
 });
 
 // POST /api/admin/games
-app.post('/api/admin/games', requireAdmin, (req, res) => {
+app.post('/api/admin/games', requireAdmin, async (req, res) => {
   try {
     const {
       title,
@@ -783,13 +956,13 @@ app.post('/api/admin/games', requireAdmin, (req, res) => {
     const finalSlug = (slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')) || `game-${Date.now()}`;
 
     // Check slug collision
-    const existing = db.getGameBySlug(finalSlug);
+    const existing = await db.getGameBySlug(finalSlug);
     if (existing) {
       res.status(400).json({ error: `Game with slug "${finalSlug}" already exists.` });
       return;
     }
 
-    const created = db.createGame({
+    const created = await db.createGame({
       title,
       slug: finalSlug,
       tagline: tagline || '',
@@ -815,25 +988,64 @@ app.post('/api/admin/games', requireAdmin, (req, res) => {
 });
 
 // PUT /api/admin/games/:id
-app.put('/api/admin/games/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/games/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = db.updateGame(id, req.body);
-    if (!updated) {
-      res.status(404).json({ error: 'Game not found.' });
-      return;
+    const body = req.body || {};
+
+    // Collect any game media assets being updated/referenced
+    const assetsToLock: Array<{ bucket: string; path: string }> = [];
+    if (body.cover_image && typeof body.cover_image === 'string') {
+      assetsToLock.push({ bucket: 'game-assets', path: body.cover_image });
     }
+    if (body.banner_image && typeof body.banner_image === 'string') {
+      assetsToLock.push({ bucket: 'game-assets', path: body.banner_image });
+    }
+    if (Array.isArray(body.screenshots)) {
+      for (const s of body.screenshots) {
+        if (typeof s === 'string' && s.trim()) {
+          assetsToLock.push({ bucket: 'game-assets', path: s });
+        }
+      }
+    }
+
+    const updated = await assetConcurrency.runExclusiveMany(assetsToLock, async () => {
+      // Validate that any introduced storage assets exist in storage
+      for (const item of assetsToLock) {
+        const clean = item.path.split('?')[0].trim();
+        // If placeholder, skip storage verification
+        if (clean.startsWith('/uploads/') || clean.startsWith('/brand/')) continue;
+        if ((clean.startsWith('http://') || clean.startsWith('https://')) && !clean.includes('/game-assets/')) continue;
+
+        const basename = path.basename(clean);
+        const meta = await storageService.getObjectMetadata(item.bucket as StorageBucket, basename);
+        if (!meta) {
+          const err: any = new Error(`Storage asset "${basename}" does not exist in bucket "${item.bucket}". Cannot reference nonexistent asset.`);
+          err.statusCode = 404;
+          throw err;
+        }
+      }
+
+      const resUpdate = await db.updateGame(id, req.body);
+      if (!resUpdate) {
+        const err: any = new Error('Game not found.');
+        err.statusCode = 404;
+        throw err;
+      }
+      return resUpdate;
+    });
+
     res.json({ success: true, game: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
 // DELETE /api/admin/games/:id
-app.delete('/api/admin/games/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/games/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = db.deleteGame(id);
+    const deleted = await db.deleteGame(id);
     if (!deleted) {
       res.status(404).json({ error: 'Game not found.' });
       return;
@@ -849,9 +1061,9 @@ app.delete('/api/admin/games/:id', requireAdmin, (req, res) => {
 // ==========================================
 
 // GET /api/admin/products
-app.get('/api/admin/products', requireAdmin, (_req, res) => {
+app.get('/api/admin/products', requireAdmin, async (_req, res) => {
   try {
-    const products = db.getProducts(true);
+    const products = await db.getProducts(true);
     res.json({ products });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch admin products' });
@@ -859,9 +1071,9 @@ app.get('/api/admin/products', requireAdmin, (_req, res) => {
 });
 
 // GET /api/admin/products/:id
-app.get('/api/admin/products/:id', requireAdmin, (req, res) => {
+app.get('/api/admin/products/:id', requireAdmin, async (req, res) => {
   try {
-    const product = db.getProductById(req.params.id);
+    const product = await db.getProductById(req.params.id);
     if (!product) {
       res.status(404).json({ error: 'Product not found' });
       return;
@@ -873,7 +1085,7 @@ app.get('/api/admin/products/:id', requireAdmin, (req, res) => {
 });
 
 // POST /api/admin/products
-app.post('/api/admin/products', requireAdmin, (req, res) => {
+app.post('/api/admin/products', requireAdmin, async (req, res) => {
   try {
     const {
       name,
@@ -903,13 +1115,13 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
       ? slug.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-')
       : name.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
 
-    const existing = db.getProductBySlug(generatedSlug, true);
+    const existing = await db.getProductBySlug(generatedSlug, true);
     if (existing) {
       res.status(400).json({ error: `A product with slug "${generatedSlug}" already exists` });
       return;
     }
 
-    const newProduct = db.createProduct({
+    const newProduct = await db.createProduct({
       name: name.trim(),
       slug: generatedSlug,
       short_description: short_description ? short_description.trim() : '',
@@ -935,10 +1147,10 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
 });
 
 // PUT /api/admin/products/:id
-app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/products/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const existing = db.getProductById(id);
+    const existing = await db.getProductById(id);
     if (!existing) {
       res.status(404).json({ error: 'Product not found' });
       return;
@@ -946,25 +1158,56 @@ app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
 
     const updates = { ...req.body };
     if (updates.slug && updates.slug !== existing.slug) {
-      const slugCheck = db.getProductBySlug(updates.slug, true);
+      const slugCheck = await db.getProductBySlug(updates.slug, true);
       if (slugCheck && slugCheck.id !== id) {
         res.status(400).json({ error: `A product with slug "${updates.slug}" already exists` });
         return;
       }
     }
 
-    const updated = db.updateProduct(id, updates);
+    // Collect any product media assets being updated/referenced
+    const assetsToLock: Array<{ bucket: string; path: string }> = [];
+    if (updates.cover_image && typeof updates.cover_image === 'string') {
+      assetsToLock.push({ bucket: 'product-assets', path: updates.cover_image });
+    }
+    if (Array.isArray(updates.gallery)) {
+      for (const img of updates.gallery) {
+        if (typeof img === 'string' && img.trim()) {
+          assetsToLock.push({ bucket: 'product-assets', path: img });
+        }
+      }
+    }
+
+    const updated = await assetConcurrency.runExclusiveMany(assetsToLock, async () => {
+      // Validate that any introduced storage assets exist in storage
+      for (const item of assetsToLock) {
+        const clean = item.path.split('?')[0].trim();
+        if (clean.startsWith('/uploads/') || clean.startsWith('/brand/')) continue;
+        if ((clean.startsWith('http://') || clean.startsWith('https://')) && !clean.includes('/product-assets/')) continue;
+
+        const basename = path.basename(clean);
+        const meta = await storageService.getObjectMetadata(item.bucket as StorageBucket, basename);
+        if (!meta) {
+          const err: any = new Error(`Storage asset "${basename}" does not exist in bucket "${item.bucket}". Cannot reference nonexistent asset.`);
+          err.statusCode = 404;
+          throw err;
+        }
+      }
+
+      return await db.updateProduct(id, updates);
+    });
+
     res.json({ success: true, product: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update product' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update product' });
   }
 });
 
 // DELETE /api/admin/products/:id
-app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const success = db.deleteProduct(id);
+    const success = await db.deleteProduct(id);
     if (!success) {
       res.status(404).json({ error: 'Product not found' });
       return;
@@ -976,7 +1219,7 @@ app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
 });
 
 // PATCH /api/admin/products/:id/status
-app.patch('/api/admin/products/:id/status', requireAdmin, (req, res) => {
+app.patch('/api/admin/products/:id/status', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -984,7 +1227,7 @@ app.patch('/api/admin/products/:id/status', requireAdmin, (req, res) => {
       res.status(400).json({ error: 'Status must be Draft or Published' });
       return;
     }
-    const updated = db.updateProduct(id, { status });
+    const updated = await db.updateProduct(id, { status });
     if (!updated) {
       res.status(404).json({ error: 'Product not found' });
       return;
@@ -996,11 +1239,11 @@ app.patch('/api/admin/products/:id/status', requireAdmin, (req, res) => {
 });
 
 // PATCH /api/admin/products/:id/featured
-app.patch('/api/admin/products/:id/featured', requireAdmin, (req, res) => {
+app.patch('/api/admin/products/:id/featured', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { featured } = req.body;
-    const updated = db.updateProduct(id, { featured: Boolean(featured) });
+    const updated = await db.updateProduct(id, { featured: Boolean(featured) });
     if (!updated) {
       res.status(404).json({ error: 'Product not found' });
       return;
@@ -1012,17 +1255,19 @@ app.patch('/api/admin/products/:id/featured', requireAdmin, (req, res) => {
 });
 
 // GET /api/admin/releases
-app.get('/api/admin/releases', requireAdmin, (_req, res) => {
+app.get('/api/admin/releases', requireAdmin, async (_req, res) => {
   try {
-    const releases = db.getReleases();
-    const enriched = releases.map((r) => {
-      const game = db.getGameById(r.game_id) || db.getGameBySlug(r.game_id);
-      return {
-        ...r,
-        game_title: game?.title || 'Unknown Game',
-        game_slug: game?.slug || '',
-      };
-    });
+    const releases = await db.getReleases();
+    const enriched = await Promise.all(
+      releases.map(async (r) => {
+        const game = (await db.getGameById(r.game_id)) || (await db.getGameBySlug(r.game_id));
+        return {
+          ...r,
+          game_title: game?.title || 'Unknown Game',
+          game_slug: game?.slug || '',
+        };
+      })
+    );
     res.json({ releases: enriched });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1030,7 +1275,7 @@ app.get('/api/admin/releases', requireAdmin, (_req, res) => {
 });
 
 // POST /api/admin/releases
-app.post('/api/admin/releases', requireAdmin, (req, res) => {
+app.post('/api/admin/releases', requireAdmin, async (req, res) => {
   try {
     const {
       game_id,
@@ -1053,7 +1298,7 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
       return;
     }
 
-    const game = db.getGameById(rawGameId) || db.getGameBySlug(rawGameId);
+    const game = (await db.getGameById(rawGameId)) || (await db.getGameBySlug(rawGameId));
     if (!game) {
       res.status(404).json({ error: 'Associated game does not exist in Game Catalog.' });
       return;
@@ -1064,7 +1309,7 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
       apk_filename
     );
 
-    const created = db.createRelease({
+    const created = await db.createRelease({
       game_id: game.id,
       version_name,
       version_code: Number(version_code) || 1,
@@ -1080,7 +1325,7 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
     });
 
     // Set download URL
-    const updated = db.updateRelease(created.id, {
+    const updated = await db.updateRelease(created.id, {
       apk_download_url: `/api/releases/${created.id}/download`,
     });
 
@@ -1091,10 +1336,10 @@ app.post('/api/admin/releases', requireAdmin, (req, res) => {
 });
 
 // PUT /api/admin/releases/:id
-app.put('/api/admin/releases/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/releases/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const existing = db.getReleaseById(id);
+    const existing = await db.getReleaseById(id);
     if (!existing) {
       res.status(404).json({ error: 'Release not found' });
       return;
@@ -1103,7 +1348,7 @@ app.put('/api/admin/releases/:id', requireAdmin, (req, res) => {
     const updates = { ...req.body };
     const rawGameId = updates.game_id || updates.gameId;
     if (rawGameId) {
-      const game = db.getGameById(rawGameId) || db.getGameBySlug(rawGameId);
+      const game = (await db.getGameById(rawGameId)) || (await db.getGameBySlug(rawGameId));
       if (!game) {
         res.status(404).json({ error: 'Associated game does not exist.' });
         return;
@@ -1117,7 +1362,7 @@ app.put('/api/admin/releases/:id', requireAdmin, (req, res) => {
     } else if (updates.apk_filename && !existing.original_filename) {
       updates.original_filename = sanitizeOriginalFilename(updates.apk_filename);
     }
-    const updated = db.updateRelease(id, updates);
+    const updated = await db.updateRelease(id, updates);
     res.json({ success: true, release: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1125,10 +1370,10 @@ app.put('/api/admin/releases/:id', requireAdmin, (req, res) => {
 });
 
 // DELETE /api/admin/releases/:id
-app.delete('/api/admin/releases/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/releases/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = db.deleteRelease(id);
+    const deleted = await db.deleteRelease(id);
     if (!deleted) {
       res.status(404).json({ error: 'Release not found' });
       return;
@@ -1140,18 +1385,44 @@ app.delete('/api/admin/releases/:id', requireAdmin, (req, res) => {
 });
 
 // POST /api/admin/upload/image
-app.post('/api/admin/upload/image', requireAdmin, uploadImage.single('image'), (req, res) => {
+app.post('/api/admin/upload/image', requireAdmin, handleImageUpload, async (req, res) => {
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       res.status(400).json({ error: 'No image file uploaded' });
       return;
     }
-    const publicUrl = `/uploads/images/${req.file.filename}`;
+
+    // Validate magic bytes and mime type
+    const validation = validateImageBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
+    if (!validation.valid) {
+      res.status(400).json({ error: validation.error || 'Invalid image file content' });
+      return;
+    }
+
+    // Determine target bucket
+    const requestedBucket = req.body?.bucket || req.query?.bucket;
+    const bucket: StorageBucket =
+      requestedBucket === 'product-assets' || req.body?.category === 'product'
+        ? 'product-assets'
+        : 'game-assets';
+
+    // Generate collision-resistant unique path
+    const objectPath = generateObjectPath('', req.file.originalname);
+
+    // Upload to Supabase Storage
+    const result = await storageService.upload({
+      bucket,
+      path: objectPath,
+      buffer: req.file.buffer,
+      contentType: validation.contentType || req.file.mimetype,
+      preventOverwrite: true,
+    });
+
     res.json({
       success: true,
-      filename: req.file.filename,
-      url: publicUrl,
-      size: req.file.size,
+      filename: result.path,
+      url: result.url,
+      size: result.size,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Image upload failed' });
@@ -1159,20 +1430,39 @@ app.post('/api/admin/upload/image', requireAdmin, uploadImage.single('image'), (
 });
 
 // POST /api/admin/upload/apk
-app.post('/api/admin/upload/apk', requireAdmin, uploadApk.single('apk'), (req, res) => {
+app.post('/api/admin/upload/apk', requireAdmin, handleApkUpload, async (req, res) => {
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       res.status(400).json({ error: 'No APK file uploaded' });
       return;
     }
+
+    // Validate magic bytes (PK\x03\x04 + AndroidManifest.xml)
+    const validation = validateApkBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
+    if (!validation.valid) {
+      res.status(400).json({ error: validation.error || 'Invalid APK file content' });
+      return;
+    }
+
     const sanitizedOriginal = sanitizeOriginalFilename(req.file.originalname);
+    const objectPath = generateObjectPath('', sanitizedOriginal);
+
+    // Upload to private release-apks bucket
+    const result = await storageService.upload({
+      bucket: 'release-apks',
+      path: objectPath,
+      buffer: req.file.buffer,
+      contentType: validation.contentType || 'application/vnd.android.package-archive',
+      preventOverwrite: true,
+    });
+
     res.json({
       success: true,
-      filename: req.file.filename,
-      stored_filename: req.file.filename,
+      filename: result.path,
+      stored_filename: result.path,
       original_filename: sanitizedOriginal,
       original_name: sanitizedOriginal,
-      size: req.file.size,
+      size: result.size,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'APK upload failed' });
@@ -1180,27 +1470,889 @@ app.post('/api/admin/upload/apk', requireAdmin, uploadApk.single('apk'), (req, r
 });
 
 // GET /api/admin/settings
-app.get('/api/admin/settings', requireAdmin, (_req, res) => {
-  res.json({ settings: db.getSettings() });
+app.get('/api/admin/settings', requireAdmin, async (_req, res) => {
+  try {
+    const settings = await db.getSettings();
+    res.json({ settings });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT /api/admin/settings
-app.put('/api/admin/settings', requireAdmin, (req, res) => {
-  const updated = db.updateSettings(req.body);
-  res.json({ success: true, settings: updated });
+app.put('/api/admin/settings', requireAdmin, async (req, res) => {
+  try {
+    const updated = await db.updateSettings(req.body);
+    res.json({ success: true, settings: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/admin/system/storage
-app.get('/api/admin/system/storage', requireAdmin, (_req, res) => {
-  res.json({
-    success: true,
-    storage: {
-      ...db.getStorageInfo(),
-      uploadsDir: UPLOADS_DIR,
-      imagesDir: IMAGES_DIR,
-      apksDir: APKS_DIR,
-    },
-  });
+app.get('/api/admin/system/storage', requireAdmin, async (_req, res) => {
+  try {
+    const storageInfo = await db.getStorageInfo();
+    res.json({
+      success: true,
+      storage: {
+        ...storageInfo,
+        uploadsDir: UPLOADS_DIR,
+        imagesDir: IMAGES_DIR,
+        apksDir: APKS_DIR,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// MEDIA & ASSET MANAGER ENDPOINTS (PHASE 4.3.6)
+// ==========================================
+
+export interface MediaReference {
+  type: 'game' | 'product' | 'release';
+  id: string;
+  title: string;
+  field: string;
+}
+
+export function findAssetReferences(
+  bucket: StorageBucket,
+  objectPath: string,
+  objectName: string,
+  publicUrl: string | null,
+  games: any[],
+  products: any[],
+  releases: any[]
+): MediaReference[] {
+  const references: MediaReference[] = [];
+  const cleanPath = objectPath.replace(/^\/+/, '');
+  const basename = objectName || path.basename(cleanPath);
+
+  // Check Release references (APK files)
+  if (bucket === 'release-apks') {
+    for (const r of releases) {
+      const relApk = r.apk_filename ? String(r.apk_filename).replace(/^\/+/, '') : '';
+      const relBase = path.basename(relApk);
+      if (relApk === cleanPath || relBase === basename) {
+        references.push({
+          type: 'release',
+          id: r.id,
+          title: `${r.version_name || 'Release'} (${r.id})`,
+          field: 'apk_filename',
+        });
+      }
+    }
+  }
+
+  // Helper to match URL, path, or basename
+  const isMatch = (targetUrlOrPath: string | undefined | null): boolean => {
+    if (!targetUrlOrPath || typeof targetUrlOrPath !== 'string') return false;
+    const cleanTarget = targetUrlOrPath.trim();
+    if (!cleanTarget) return false;
+
+    // Exact string match
+    if (cleanTarget === cleanPath || cleanTarget === basename) return true;
+
+    // Canonical public URL match
+    if (publicUrl && cleanTarget === publicUrl) return true;
+
+    // Basename match
+    const targetBase = path.basename(cleanTarget.split('?')[0]);
+    if (targetBase === basename) return true;
+
+    // Suffix or URL path segment match
+    if (cleanTarget.endsWith('/' + cleanPath) || cleanTarget.includes('/' + bucket + '/' + cleanPath)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Inspect Games
+  for (const g of games) {
+    if (isMatch(g.cover_image)) {
+      references.push({ type: 'game', id: g.id, title: g.title, field: 'cover_image' });
+    }
+    if (isMatch(g.banner_image)) {
+      references.push({ type: 'game', id: g.id, title: g.title, field: 'banner_image' });
+    }
+    if (Array.isArray(g.screenshots)) {
+      for (const s of g.screenshots) {
+        if (isMatch(s)) {
+          references.push({ type: 'game', id: g.id, title: g.title, field: 'screenshots' });
+          break; // Avoid duplicate references for the same game
+        }
+      }
+    }
+  }
+
+  // Inspect Products
+  for (const p of products) {
+    if (isMatch(p.cover_image)) {
+      references.push({ type: 'product', id: p.id, title: p.name || p.title, field: 'cover_image' });
+    }
+    if (Array.isArray(p.gallery)) {
+      for (const img of p.gallery) {
+        if (isMatch(img)) {
+          references.push({ type: 'product', id: p.id, title: p.name || p.title, field: 'gallery' });
+          break; // Avoid duplicate references for the same product
+        }
+      }
+    }
+  }
+
+  return references;
+}
+
+// ==========================================
+// MEDIA & ASSET MANAGER CONCURRENCY & VALIDATION
+// ==========================================
+
+export class AssetConcurrencyManager {
+  private queues = new Map<string, Promise<void>>();
+
+  public makeKey(bucket: string, objectPath: string): string {
+    if (!objectPath || typeof objectPath !== 'string') return '';
+    let clean = objectPath.split('?')[0].split('#')[0].trim().replace(/^\/+/, '');
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {}
+    const basename = path.basename(clean);
+    return `${(bucket || '').toLowerCase().trim()}::${basename}`;
+  }
+
+  async runExclusive<T>(bucket: string, objectPath: string, fn: () => Promise<T>): Promise<T> {
+    return this.runExclusiveMany([{ bucket, path: objectPath }], fn);
+  }
+
+  async runExclusiveMany<T>(
+    items: Array<{ bucket: string; path: string }>,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    if (!items || items.length === 0) {
+      return await fn();
+    }
+
+    // Deduplicate and deterministically sort keys to prevent deadlocks (ABBA)
+    const uniqueKeys = Array.from(
+      new Set(items.map((i) => this.makeKey(i.bucket, i.path)).filter((k) => Boolean(k) && !k.endsWith('::')))
+    ).sort();
+
+    if (uniqueKeys.length === 0) {
+      return await fn();
+    }
+
+    // Chained FIFO promise for each key
+    const releases: Array<() => void> = [];
+    const acquiredNextPromises: Array<{ key: string; promise: Promise<void> }> = [];
+    const prevPromises: Array<Promise<void>> = [];
+
+    for (const key of uniqueKeys) {
+      const prev = this.queues.get(key) || Promise.resolve();
+      prevPromises.push(prev);
+
+      let release: () => void;
+      const next = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      releases.push(release!);
+      acquiredNextPromises.push({ key, promise: next });
+      this.queues.set(key, next);
+    }
+
+    // Wait for all previous operations on all keys to complete
+    await Promise.all(prevPromises);
+
+    try {
+      return await fn();
+    } finally {
+      // Release all locks
+      for (const rel of releases) {
+        rel();
+      }
+      // Clean up map entries for keys where no subsequent request is waiting
+      for (const item of acquiredNextPromises) {
+        if (this.queues.get(item.key) === item.promise) {
+          this.queues.delete(item.key);
+        }
+      }
+    }
+  }
+}
+
+export const assetConcurrency = new AssetConcurrencyManager();
+
+export async function validateAttachmentTarget(
+  rawUrlOrPath: string,
+  targetType: 'game' | 'product',
+  storage: typeof storageService
+): Promise<{
+  valid: boolean;
+  status: number;
+  error?: string;
+  bucket?: StorageBucket;
+  objectPath?: string;
+  canonicalUrl?: string;
+}> {
+  if (!rawUrlOrPath || typeof rawUrlOrPath !== 'string' || !rawUrlOrPath.trim()) {
+    return { valid: false, status: 400, error: 'Attachment URL or path is required.' };
+  }
+
+  const raw = rawUrlOrPath.trim();
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {}
+
+  // 1. Path traversal & null byte defense
+  if (
+    raw.includes('..') ||
+    raw.includes('\0') ||
+    decoded.includes('..') ||
+    decoded.includes('\0') ||
+    /%2e%2e|%2f|%5c|%00/i.test(raw)
+  ) {
+    return { valid: false, status: 400, error: 'Malformed or path traversal sequence detected in attachment path.' };
+  }
+
+  // 2. Private APK & binary restriction
+  if (raw.toLowerCase().endsWith('.apk') || raw.includes('release-apks')) {
+    return { valid: false, status: 400, error: 'Android APK binaries and private assets cannot be attached as screenshots or gallery images.' };
+  }
+
+  // 3. Allowed file extensions
+  const ALLOWED_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+  const cleanForExt = raw.split('?')[0].split('#')[0];
+  const ext = path.extname(cleanForExt).toLowerCase();
+  if (!ALLOWED_EXTS.has(ext)) {
+    return { valid: false, status: 400, error: `Invalid image extension "${ext}". Allowed: PNG, JPG, JPEG, WEBP, GIF.` };
+  }
+
+  // 4. Resolve target bucket and objectPath
+  let bucket: StorageBucket = targetType === 'game' ? 'game-assets' : 'product-assets';
+  let objectPath = '';
+
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(raw);
+    } catch {
+      return { valid: false, status: 400, error: 'Invalid URL format.' };
+    }
+
+    const pathname = parsedUrl.pathname;
+    const match = pathname.match(/\/(game-assets|product-assets)\/(.+)$/);
+    if (!match) {
+      return {
+        valid: false,
+        status: 400,
+        error: 'External URLs are not permitted. Only assets hosted on Karsh Tech storage may be attached.',
+      };
+    }
+    bucket = match[1] as StorageBucket;
+    objectPath = match[2];
+  } else {
+    const cleanRelative = raw.replace(/^\/+/, '');
+    if (cleanRelative.startsWith('game-assets/')) {
+      bucket = 'game-assets';
+      objectPath = cleanRelative.replace(/^game-assets\//, '');
+    } else if (cleanRelative.startsWith('product-assets/')) {
+      bucket = 'product-assets';
+      objectPath = cleanRelative.replace(/^product-assets\//, '');
+    } else {
+      objectPath = cleanRelative;
+    }
+  }
+
+  objectPath = objectPath.replace(/^\/+/, '');
+  if (!objectPath) {
+    return { valid: false, status: 400, error: 'Storage object path cannot be empty.' };
+  }
+
+  // 5. Verify the object actually exists in storage before attaching
+  const meta = await storage.getObjectMetadata(bucket, objectPath);
+  if (!meta) {
+    return {
+      valid: false,
+      status: 404,
+      error: `Storage object "${objectPath}" does not exist in storage bucket "${bucket}". Cannot attach nonexistent asset.`,
+    };
+  }
+
+  // 6. Canonical public URL
+  const canonicalUrl = storage.getPublicUrl(bucket, objectPath);
+
+  return {
+    valid: true,
+    status: 200,
+    bucket,
+    objectPath,
+    canonicalUrl,
+  };
+}
+
+// GET /api/admin/media - List media assets across storage buckets
+app.get('/api/admin/media', requireAdmin, async (req, res) => {
+  try {
+    const bucketParam = (req.query.bucket as string) || 'all';
+    const typeParam = (req.query.type as string) || 'all';
+    const searchParam = ((req.query.search as string) || '').toLowerCase().trim();
+    const associationParam = (req.query.association as string) || 'all';
+    const sortParam = (req.query.sort as string) || 'date_desc';
+
+    // Determine target buckets
+    let targetBuckets: StorageBucket[] = ['game-assets', 'product-assets', 'release-apks'];
+    if (bucketParam !== 'all') {
+      if (!['game-assets', 'product-assets', 'release-apks'].includes(bucketParam)) {
+        res.status(400).json({ error: `Invalid bucket "${bucketParam}". Must be one of: game-assets, product-assets, release-apks` });
+        return;
+      }
+      targetBuckets = [bucketParam as StorageBucket];
+    } else if (typeParam === 'image') {
+      targetBuckets = ['game-assets', 'product-assets'];
+    } else if (typeParam === 'apk') {
+      targetBuckets = ['release-apks'];
+    }
+
+    // List storage objects (fail closed on storage failure, do not swallow errors)
+    const [listResults, games, products, releases] = await Promise.all([
+      Promise.all(
+        targetBuckets.map(async (bucket) => {
+          const objects = await storageService.listObjects(bucket);
+          return { bucket, objects };
+        })
+      ),
+      db.getGames(),
+      db.getProducts(true),
+      db.getReleases(),
+    ]);
+
+    const allAssets: any[] = [];
+
+    for (const { bucket, objects } of listResults) {
+      const visibility = storageService.getBucketVisibility(bucket);
+      for (const obj of objects) {
+        const objectPath = obj.name;
+        const basename = path.basename(objectPath);
+        const isProtected = PROTECTED_STORAGE_OBJECTS.has(basename);
+
+        let url: string | null = null;
+        if (bucket !== 'release-apks') {
+          try {
+            url = storageService.getPublicUrl(bucket, objectPath);
+          } catch {}
+        }
+
+        const refs = findAssetReferences(bucket, objectPath, basename, url, games, products, releases);
+
+        allAssets.push({
+          id: obj.id || `${bucket}::${objectPath}`,
+          name: basename,
+          path: objectPath,
+          bucket,
+          size: obj.size,
+          contentType:
+            obj.contentType ||
+            (bucket === 'release-apks' ? 'application/vnd.android.package-archive' : 'image/jpeg'),
+          createdAt: obj.createdAt || new Date().toISOString(),
+          updatedAt: obj.updatedAt || new Date().toISOString(),
+          url, // strictly null for private release-apks
+          visibility,
+          is_referenced: refs.length > 0,
+          is_protected: isProtected,
+          referenced_by: refs,
+        });
+      }
+    }
+
+    // Apply search filter
+    let filtered = allAssets;
+    if (searchParam) {
+      filtered = filtered.filter(
+        (a) =>
+          a.name.toLowerCase().includes(searchParam) ||
+          a.path.toLowerCase().includes(searchParam)
+      );
+    }
+
+    // Apply association filter
+    if (associationParam === 'associated') {
+      filtered = filtered.filter((a) => a.is_referenced);
+    } else if (associationParam === 'unassociated') {
+      filtered = filtered.filter((a) => !a.is_referenced);
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      if (sortParam === 'name_asc') return a.name.localeCompare(b.name);
+      if (sortParam === 'name_desc') return b.name.localeCompare(a.name);
+      if (sortParam === 'size_asc') return a.size - b.size;
+      if (sortParam === 'size_desc') return b.size - a.size;
+      if (sortParam === 'date_asc') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    res.json({
+      success: true,
+      count: filtered.length,
+      assets: filtered,
+    });
+  } catch (err: any) {
+    res.status(502).json({ error: err.message || 'Failed to list media assets' });
+  }
+});
+
+// GET /api/admin/media/stats - Summary metrics and bucket health
+app.get('/api/admin/media/stats', requireAdmin, async (_req, res) => {
+  try {
+    const buckets: StorageBucket[] = ['game-assets', 'product-assets', 'release-apks'];
+    const bucketStats: Record<string, { count: number; bytes: number; visibility: string }> = {};
+
+    let totalAssets = 0;
+    let totalBytes = 0;
+    let imageAssets = 0;
+    let gameImages = 0;
+    let productImages = 0;
+    let apkReleases = 0;
+
+    await Promise.all(
+      buckets.map(async (bucket) => {
+        const visibility = storageService.getBucketVisibility(bucket);
+        const objects = await storageService.listObjects(bucket);
+        const count = objects.length;
+        const bytes = objects.reduce((sum, o) => sum + (o.size || 0), 0);
+
+        bucketStats[bucket] = { count, bytes, visibility };
+        totalAssets += count;
+        totalBytes += bytes;
+
+        if (bucket === 'game-assets') {
+          gameImages += count;
+          imageAssets += count;
+        } else if (bucket === 'product-assets') {
+          productImages += count;
+          imageAssets += count;
+        } else if (bucket === 'release-apks') {
+          apkReleases += count;
+        }
+      })
+    );
+
+    res.json({
+      success: true,
+      stats: {
+        total_assets: totalAssets,
+        image_assets: imageAssets,
+        game_images: gameImages,
+        product_images: productImages,
+        apk_releases: apkReleases,
+        total_storage_bytes: totalBytes,
+        storage_by_bucket: bucketStats,
+      },
+    });
+  } catch (err: any) {
+    res.status(502).json({ error: err.message || 'Failed to get media stats' });
+  }
+});
+
+// DELETE /api/admin/media - Reference-aware storage deletion with strict private APK protection
+app.delete('/api/admin/media', requireAdmin, async (req, res) => {
+  try {
+    const bucket = (req.body.bucket || req.query.bucket) as StorageBucket;
+    const rawPath = String(req.body.path || req.query.path || '').trim();
+
+    if (!bucket || !rawPath) {
+      res.status(400).json({ error: 'Bucket and path are required for media deletion.' });
+      return;
+    }
+
+    // Strict Private APK Protection:
+    // Generic DELETE /api/admin/media must reject every request targeting release-apks
+    if (bucket === 'release-apks') {
+      res.status(403).json({
+        error: 'APK release binaries cannot be deleted via the generic media manager. APK releases must be managed through Release Management.',
+      });
+      return;
+    }
+
+    const validBuckets: StorageBucket[] = ['game-assets', 'product-assets'];
+    if (!validBuckets.includes(bucket)) {
+      res.status(400).json({ error: `Invalid bucket "${bucket}". Must be one of: ${validBuckets.join(', ')}` });
+      return;
+    }
+
+    // Path traversal & encoded separator defense
+    let decodedPath = rawPath;
+    try {
+      decodedPath = decodeURIComponent(rawPath);
+    } catch {}
+
+    if (
+      rawPath.includes('..') ||
+      rawPath.includes('\0') ||
+      decodedPath.includes('..') ||
+      decodedPath.includes('\0') ||
+      /%2e%2e|%2f|%5c|%00/i.test(rawPath)
+    ) {
+      res.status(400).json({ error: 'Invalid object path: Path traversal detected.' });
+      return;
+    }
+
+    const cleanPath = rawPath.replace(/^\/+/, '');
+    const basename = path.basename(cleanPath);
+
+    // Concurrency Lock: serialize operations on this asset to prevent race conditions
+    return await assetConcurrency.runExclusive(bucket, cleanPath, async () => {
+      // 1. Check Protected Storage Objects
+      if (PROTECTED_STORAGE_OBJECTS.has(basename)) {
+        res.status(403).json({
+          error: `Cannot delete protected production asset "${basename}". Deletion is permanently restricted.`,
+        });
+        return;
+      }
+
+      // 2. Fetch database records inside lock (fail closed on DB error)
+      let games: any[] = [];
+      let products: any[] = [];
+      let releases: any[] = [];
+
+      try {
+        [games, products, releases] = await Promise.all([
+          db.getGames(),
+          db.getProducts(true),
+          db.getReleases(),
+        ]);
+      } catch (dbErr: any) {
+        res.status(500).json({
+          error: `Database error while checking asset references: ${dbErr.message}. Deletion aborted for safety.`,
+        });
+        return;
+      }
+
+      let publicUrl: string | null = null;
+      try {
+        publicUrl = storageService.getPublicUrl(bucket, cleanPath);
+      } catch {}
+
+      const refs = findAssetReferences(bucket, cleanPath, basename, publicUrl, games, products, releases);
+      if (refs.length > 0) {
+        const refDescriptions = refs.map((r) => `${r.type} "${r.title}" (${r.field})`).join(', ');
+        res.status(409).json({
+          error: `Asset is actively referenced and cannot be deleted. Referencing entities: ${refDescriptions}. Detach or reassign references before deleting.`,
+          referenced_by: refs,
+        });
+        return;
+      }
+
+      // 3. Delete from storage
+      const deleted = await storageService.deleteObject(bucket, cleanPath);
+      if (!deleted) {
+        res.status(404).json({ error: `Failed to delete asset "${cleanPath}" from bucket "${bucket}". Object may not exist.` });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: `Asset "${cleanPath}" deleted successfully from "${bucket}".`,
+      });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Media deletion failed' });
+  }
+});
+
+// ==========================================
+// GAME SCREENSHOT MANAGEMENT (PHASE 4.3.6)
+// ==========================================
+
+// POST /api/admin/games/:id/screenshots - Attach screenshot to game
+app.post('/api/admin/games/:id/screenshots', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rawUrl = req.body.url || req.body.path;
+
+    const validation = await validateAttachmentTarget(rawUrl, 'game', storageService);
+    if (!validation.valid) {
+      res.status(validation.status).json({ error: validation.error });
+      return;
+    }
+
+    const { bucket, objectPath, canonicalUrl } = validation;
+
+    return await assetConcurrency.runExclusive(bucket!, objectPath!, async () => {
+      // 1. Verify existence in storage inside lock
+      const meta = await storageService.getObjectMetadata(bucket!, objectPath!);
+      if (!meta) {
+        res.status(404).json({
+          error: `Storage object "${objectPath}" was not found in bucket "${bucket}". Cannot attach nonexistent asset.`,
+        });
+        return;
+      }
+
+      // 2. Fetch game
+      const game = await db.getGameById(id);
+      if (!game) {
+        res.status(404).json({ error: 'Game not found.' });
+        return;
+      }
+
+      // 3. Prevent duplicate attachment
+      const currentScreenshots = Array.isArray(game.screenshots) ? [...game.screenshots] : [];
+      const isDuplicate = currentScreenshots.some(
+        (s) => s === canonicalUrl || path.basename(s.split('?')[0]) === path.basename(objectPath!)
+      );
+      if (isDuplicate) {
+        res.status(409).json({ error: `Screenshot "${path.basename(objectPath!)}" is already attached to this game.` });
+        return;
+      }
+
+      currentScreenshots.push(canonicalUrl!);
+      const updated = await db.updateGame(id, { screenshots: currentScreenshots });
+      res.json({ success: true, screenshots: currentScreenshots, game: updated });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to attach screenshot' });
+  }
+});
+
+// DELETE /api/admin/games/:id/screenshots - Detach screenshot from game (storage object retained)
+app.delete('/api/admin/games/:id/screenshots', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rawUrl = req.body.url || (req.query.url as string);
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+      res.status(400).json({ error: 'Screenshot URL or path to detach is required.' });
+      return;
+    }
+
+    const target = rawUrl.trim();
+    const targetBase = path.basename(target.split('?')[0]);
+
+    return await assetConcurrency.runExclusive('game-assets', targetBase, async () => {
+      const game = await db.getGameById(id);
+      if (!game) {
+        res.status(404).json({ error: 'Game not found.' });
+        return;
+      }
+
+      const currentScreenshots = Array.isArray(game.screenshots) ? game.screenshots : [];
+
+      // Filter out target (exact match or basename match)
+      const newScreenshots = currentScreenshots.filter((s) => {
+        if (s === target) return false;
+        if (path.basename(s.split('?')[0]) === targetBase) return false;
+        return true;
+      });
+
+      const updated = await db.updateGame(id, { screenshots: newScreenshots });
+      res.json({
+        success: true,
+        message: 'Screenshot detached from game (storage object retained).',
+        screenshots: newScreenshots,
+        game: updated,
+      });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to detach screenshot' });
+  }
+});
+
+// PUT /api/admin/games/:id/screenshots - Reorder game screenshots
+app.put('/api/admin/games/:id/screenshots', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { screenshots } = req.body;
+    if (!Array.isArray(screenshots)) {
+      res.status(400).json({ error: 'Screenshots must be an array of strings.' });
+      return;
+    }
+
+    // Traversal & null byte defense on array elements
+    for (const s of screenshots) {
+      if (typeof s !== 'string' || s.includes('..') || s.includes('\0') || /%2e%2e|%2f|%5c|%00/i.test(s)) {
+        res.status(400).json({ error: 'Screenshots array contains invalid or malformed path values.' });
+        return;
+      }
+    }
+
+    // Deduplication check
+    const uniqueSet = new Set(screenshots);
+    if (uniqueSet.size !== screenshots.length) {
+      res.status(400).json({ error: 'Screenshots array cannot contain duplicate entries.' });
+      return;
+    }
+
+    const game = await db.getGameById(id);
+    if (!game) {
+      res.status(404).json({ error: 'Game not found.' });
+      return;
+    }
+
+    const sanitizedScreenshots = screenshots.filter((s) => typeof s === 'string' && s.trim().length > 0);
+    const lockItems = sanitizedScreenshots.map((s) => ({ bucket: 'game-assets', path: s }));
+
+    return await assetConcurrency.runExclusiveMany(lockItems, async () => {
+      const updated = await db.updateGame(id, { screenshots: sanitizedScreenshots });
+      res.json({ success: true, screenshots: sanitizedScreenshots, game: updated });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to reorder screenshots' });
+  }
+});
+
+// ==========================================
+// PRODUCT GALLERY MANAGEMENT (PHASE 4.3.6)
+// ==========================================
+
+// POST /api/admin/products/:id/gallery - Attach image to product gallery
+app.post('/api/admin/products/:id/gallery', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rawUrl = req.body.url || req.body.path;
+
+    const validation = await validateAttachmentTarget(rawUrl, 'product', storageService);
+    if (!validation.valid) {
+      res.status(validation.status).json({ error: validation.error });
+      return;
+    }
+
+    const { bucket, objectPath, canonicalUrl } = validation;
+
+    return await assetConcurrency.runExclusive(bucket!, objectPath!, async () => {
+      // 1. Verify existence in storage inside lock
+      const meta = await storageService.getObjectMetadata(bucket!, objectPath!);
+      if (!meta) {
+        res.status(404).json({
+          error: `Storage object "${objectPath}" was not found in bucket "${bucket}". Cannot attach nonexistent asset.`,
+        });
+        return;
+      }
+
+      // 2. Fetch product
+      const product = await db.getProductById(id);
+      if (!product) {
+        res.status(404).json({ error: 'Product not found.' });
+        return;
+      }
+
+      // 3. Prevent duplicate attachment
+      const currentGallery = Array.isArray(product.gallery) ? [...product.gallery] : [];
+      const isDuplicate = currentGallery.some(
+        (img) => img === canonicalUrl || path.basename(img.split('?')[0]) === path.basename(objectPath!)
+      );
+      if (isDuplicate) {
+        res.status(409).json({ error: `Image "${path.basename(objectPath!)}" is already attached to this product gallery.` });
+        return;
+      }
+
+      currentGallery.push(canonicalUrl!);
+      const updated = await db.updateProduct(id, { gallery: currentGallery });
+      res.json({ success: true, gallery: currentGallery, product: updated });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to attach gallery image' });
+  }
+});
+
+// DELETE /api/admin/products/:id/gallery - Detach image from product gallery (storage object retained)
+app.delete('/api/admin/products/:id/gallery', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rawUrl = req.body.url || (req.query.url as string);
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+      res.status(400).json({ error: 'Gallery image URL or path to detach is required.' });
+      return;
+    }
+
+    const target = rawUrl.trim();
+    const targetBase = path.basename(target.split('?')[0]);
+
+    return await assetConcurrency.runExclusive('product-assets', targetBase, async () => {
+      const product = await db.getProductById(id);
+      if (!product) {
+        res.status(404).json({ error: 'Product not found.' });
+        return;
+      }
+
+      const currentGallery = Array.isArray(product.gallery) ? product.gallery : [];
+
+      const newGallery = currentGallery.filter((img) => {
+        if (img === target) return false;
+        if (path.basename(img.split('?')[0]) === targetBase) return false;
+        return true;
+      });
+
+      const updated = await db.updateProduct(id, { gallery: newGallery });
+      res.json({
+        success: true,
+        message: 'Image detached from product gallery (storage object retained).',
+        gallery: newGallery,
+        product: updated,
+      });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to detach gallery image' });
+  }
+});
+
+// PUT /api/admin/products/:id/gallery - Reorder product gallery
+app.put('/api/admin/products/:id/gallery', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { gallery } = req.body;
+    if (!Array.isArray(gallery)) {
+      res.status(400).json({ error: 'Gallery must be an array of strings.' });
+      return;
+    }
+
+    // Traversal & null byte defense on array elements
+    for (const img of gallery) {
+      if (typeof img !== 'string' || img.includes('..') || img.includes('\0') || /%2e%2e|%2f|%5c|%00/i.test(img)) {
+        res.status(400).json({ error: 'Gallery array contains invalid or malformed path values.' });
+        return;
+      }
+    }
+
+    // Deduplication check
+    const uniqueSet = new Set(gallery);
+    if (uniqueSet.size !== gallery.length) {
+      res.status(400).json({ error: 'Gallery array cannot contain duplicate entries.' });
+      return;
+    }
+
+    const product = await db.getProductById(id);
+    if (!product) {
+      res.status(404).json({ error: 'Product not found.' });
+      return;
+    }
+
+    const sanitizedGallery = gallery.filter((img) => typeof img === 'string' && img.trim().length > 0);
+    const lockItems = sanitizedGallery.map((img) => ({ bucket: 'product-assets', path: img }));
+
+    return await assetConcurrency.runExclusiveMany(lockItems, async () => {
+      const updated = await db.updateProduct(id, { gallery: sanitizedGallery });
+      res.json({ success: true, gallery: sanitizedGallery, product: updated });
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to reorder gallery' });
+  }
+});
+
+// ==========================================
+// CENTRALIZED ERROR HANDLER
+// ==========================================
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return res.status(413).json({ error: 'Payload too large. Maximum size is 10MB.' });
+  }
+  if (err instanceof SyntaxError && 'status' in err && (err as any).status === 400) {
+    return res.status(400).json({ error: 'Malformed JSON payload' });
+  }
+  const status = typeof err.status === 'number' ? err.status : 500;
+  res.status(status).json({ error: err.expose ? err.message : 'Internal Server Error' });
 });
 
 // ==========================================
@@ -1217,11 +2369,53 @@ if (fs.existsSync(distPath)) {
 // Start Server
 async function startServer() {
   ensureStorageDirectories();
+  await db.init();
   await seedDatabase();
-  app.listen(PORT, () => {
+
+  try {
+    await storageService.init();
+  } catch (err: any) {
+    console.warn('[Karsh Tech Server] Storage service initialization warning:', err.message);
+  }
+
+  const server = app.listen(PORT, () => {
     console.log(`[Karsh Tech Server] Running securely on http://localhost:${PORT}`);
+    console.log(`[Karsh Tech Server] Database provider: ${db.getProviderName()}`);
     console.log(`[Karsh Tech Server] Storage: persistent=${IS_PERSISTENT_STORAGE}, uploads=${UPLOADS_DIR}`);
   });
+
+  const handleShutdown = async (signal: string) => {
+    console.log(`[Karsh Tech Server] ${signal} signal received: closing HTTP server and database pool.`);
+    server.close(async () => {
+      try {
+        await db.close();
+        console.log('[Karsh Tech Server] Shutdown complete.');
+        process.exit(0);
+      } catch (err) {
+        console.error('[Karsh Tech Server] Error during shutdown:', err);
+        process.exit(1);
+      }
+    });
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
 }
 
-startServer();
+export { app, storageService, setStorageService };
+
+// Only automatically start HTTP listener when run directly, not when imported in test suites
+const isDirectEntry = Boolean(
+  process.argv[1] &&
+  (process.argv[1].endsWith('index.ts') ||
+   process.argv[1].endsWith('index.js') ||
+   process.argv[1].endsWith('server.ts') ||
+   process.argv[1].endsWith('server.js'))
+);
+
+if (isDirectEntry) {
+  startServer().catch((err) => {
+    console.error('[Karsh Tech Server] Fatal startup failure:', err?.message || err);
+    process.exit(1);
+  });
+}

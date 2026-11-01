@@ -1,4 +1,13 @@
-import type { Game, Release, User, DashboardStats, Product } from '../types';
+import type {
+  Game,
+  Release,
+  User,
+  DashboardStats,
+  Product,
+  MediaAsset,
+  MediaStats,
+  MediaBucket,
+} from '../types';
 
 const API_BASE = '/api';
 
@@ -278,9 +287,15 @@ class ApiClient {
   }
 
   // Upload helpers (FormData)
-  public async uploadImage(file: File): Promise<{ success: boolean; url: string; filename: string }> {
+  public async uploadImage(
+    file: File,
+    bucket?: 'game-assets' | 'product-assets'
+  ): Promise<{ success: boolean; url: string; filename: string }> {
     const formData = new FormData();
     formData.append('image', file);
+    if (bucket) {
+      formData.append('bucket', bucket);
+    }
 
     const res = await fetch(`${API_BASE}/admin/upload/image`, {
       method: 'POST',
@@ -317,6 +332,104 @@ class ApiClient {
       throw new Error(data.error || 'Failed to upload APK');
     }
     return data;
+  }
+
+  // Media & Asset Manager Endpoints (Phase 4.3.6)
+  public async getAdminMedia(params?: {
+    bucket?: 'all' | MediaBucket;
+    type?: 'all' | 'image' | 'apk';
+    search?: string;
+    association?: 'all' | 'associated' | 'unassociated';
+    sort?: 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc' | 'size_asc';
+  }): Promise<{ success: boolean; count: number; assets: MediaAsset[] }> {
+    const query = new URLSearchParams();
+    if (params?.bucket && params.bucket !== 'all') query.set('bucket', params.bucket);
+    if (params?.type && params.type !== 'all') query.set('type', params.type);
+    if (params?.search) query.set('search', params.search);
+    if (params?.association && params.association !== 'all') query.set('association', params.association);
+    if (params?.sort) query.set('sort', params.sort);
+
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<{ success: boolean; count: number; assets: MediaAsset[] }>(`/admin/media${qs}`);
+  }
+
+  public async getAdminMediaStats(): Promise<{ success: boolean; stats: MediaStats }> {
+    return this.request<{ success: boolean; stats: MediaStats }>('/admin/media/stats');
+  }
+
+  public async deleteAdminMedia(bucket: MediaBucket, path: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/admin/media', {
+      method: 'DELETE',
+      body: JSON.stringify({ bucket, path }),
+    });
+  }
+
+  // Game Screenshot Management
+  public async addGameScreenshot(gameId: string, url: string): Promise<{ success: boolean; screenshots: string[]; game: Game }> {
+    const res = await this.request<{ success: boolean; screenshots: string[]; game: Game }>(`/admin/games/${gameId}/screenshots`, {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
+  }
+
+  public async removeGameScreenshot(gameId: string, url: string): Promise<{ success: boolean; screenshots: string[]; game: Game }> {
+    const res = await this.request<{ success: boolean; screenshots: string[]; game: Game }>(`/admin/games/${gameId}/screenshots`, {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
+  }
+
+  public async reorderGameScreenshots(gameId: string, screenshots: string[]): Promise<{ success: boolean; screenshots: string[]; game: Game }> {
+    const res = await this.request<{ success: boolean; screenshots: string[]; game: Game }>(`/admin/games/${gameId}/screenshots`, {
+      method: 'PUT',
+      body: JSON.stringify({ screenshots }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:games-updated'));
+    }
+    return res;
+  }
+
+  // Product Gallery Management
+  public async addProductGalleryImage(productId: string, url: string): Promise<{ success: boolean; gallery: string[]; product: Product }> {
+    const res = await this.request<{ success: boolean; gallery: string[]; product: Product }>(`/admin/products/${productId}/gallery`, {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
+  }
+
+  public async removeProductGalleryImage(productId: string, url: string): Promise<{ success: boolean; gallery: string[]; product: Product }> {
+    const res = await this.request<{ success: boolean; gallery: string[]; product: Product }>(`/admin/products/${productId}/gallery`, {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
+  }
+
+  public async reorderProductGallery(productId: string, gallery: string[]): Promise<{ success: boolean; gallery: string[]; product: Product }> {
+    const res = await this.request<{ success: boolean; gallery: string[]; product: Product }>(`/admin/products/${productId}/gallery`, {
+      method: 'PUT',
+      body: JSON.stringify({ gallery }),
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('karshtech:products-updated'));
+    }
+    return res;
   }
 }
 

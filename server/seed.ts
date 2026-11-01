@@ -10,21 +10,69 @@ import {
 } from './paths.js';
 
 export async function seedDatabase(): Promise<void> {
-  // Ensure storage directories are initialized
+  // Ensure local storage directories are initialized for uploads
   ensureStorageDirectories();
 
-  // 1. Seed or Migrate Admin User
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isPostgres = db.getProviderName() === 'postgres';
+
+  // 1. PostgreSql / Production Safeguard:
+  // Migrated production data must NEVER receive demo seed records or unwanted updates.
+  if (isPostgres || isProduction) {
+    const existingUsers = await db.getUsers();
+    if (existingUsers.length === 0) {
+      const defaultUsername = (process.env.ADMIN_USERNAME || 'khrgosh').trim();
+      const bootstrapPassword = process.env.ADMIN_PASSWORD;
+      const isBootstrapPasswordEmpty = !bootstrapPassword || bootstrapPassword.trim().length === 0;
+
+      // In production mode, an explicit bootstrap password is mandatory if no admin exists.
+      // A hardcoded fallback is strictly prohibited in production.
+      // Notice: bootstrapPassword is NOT trimmed, preserving exact configured value.
+      if (isProduction && isBootstrapPasswordEmpty) {
+        throw new Error(
+          '[SECURITY FATAL] Production database has no administrator account and ADMIN_PASSWORD is not configured. ' +
+          'An explicit, non-empty ADMIN_PASSWORD environment variable is required to bootstrap the initial superadmin.'
+        );
+      }
+
+      // In non-production environments (e.g. local dev / test runner), allow dev fallback if unset
+      const initialPassword = bootstrapPassword || 'KarshTechAdmin2026!';
+      const passwordHash = await hashPassword(initialPassword);
+      await db.createUser({
+        username: defaultUsername,
+        password_hash: passwordHash,
+        role: 'superadmin',
+      });
+      console.log(`[Seed] Initial superadmin account bootstrapped for empty database: username="${defaultUsername}"`);
+    }
+
+    const settings = await db.getSettings();
+    if (!settings || !settings.studio_name) {
+      await db.updateSettings({
+        studio_name: 'Karsh Tech',
+        tagline: 'Turning Ideas into Digital Reality',
+        contact_email: 'karshhtech@gmail.com',
+        updated_at: new Date().toISOString(),
+        initial_seeded: true,
+      });
+    }
+
+    // In PostgreSQL / Production, skip all demo game seeding
+    return;
+  }
+
+  // 2. JSON Development Mode Seeding
   const defaultUsername = process.env.ADMIN_USERNAME || 'khrgosh';
   const defaultPassword = process.env.ADMIN_PASSWORD || 'KarshTechAdmin2026!';
-  const existingUsers = db.getUsers();
+  const existingUsers = await db.getUsers();
 
   const oldAdmin = existingUsers.find((u) => u.username.toLowerCase() === 'admin');
   if (oldAdmin) {
-    db.updateUserUsername(oldAdmin.id, defaultUsername);
+    await db.updateUserUsername(oldAdmin.id, defaultUsername);
     console.log(`[Seed] Migrated admin account username to "${defaultUsername}" (id: ${oldAdmin.id})`);
   } else if (existingUsers.length === 0) {
     const passwordHash = await hashPassword(defaultPassword);
-    db.createUser({
+    await db.createUser({
       username: defaultUsername,
       password_hash: passwordHash,
       role: 'superadmin',
@@ -32,10 +80,10 @@ export async function seedDatabase(): Promise<void> {
     console.log(`[Seed] Initial superadmin account initialized: username="${defaultUsername}"`);
   }
 
-  // 2. Ensure studio settings are initialized
-  const settings = db.getSettings();
+  // Ensure studio settings are initialized
+  const settings = await db.getSettings();
   if (!settings || !settings.studio_name) {
-    db.updateSettings({
+    await db.updateSettings({
       studio_name: 'Karsh Tech',
       tagline: 'Turning Ideas into Digital Reality',
       contact_email: 'karshhtech@gmail.com',
@@ -44,7 +92,7 @@ export async function seedDatabase(): Promise<void> {
     });
   }
 
-  // 3. Ensure bundled avatars are copied to active uploads directory if missing
+  // Ensure bundled avatars are copied to active uploads directory if missing
   try {
     const repoImagesDir = path.join(DEFAULT_REPO_UPLOADS_DIR, 'images');
     if (fs.existsSync(repoImagesDir)) {
@@ -61,30 +109,20 @@ export async function seedDatabase(): Promise<void> {
     console.warn('[Seed] Warning copying default avatars:', err);
   }
 
-  // 4. DEMO DATA SEEDING SAFEGUARD:
-  // Production data MUST NEVER be overwritten or seeded with dummy records on container restarts.
-  // Demo games and placeholder releases are ONLY seeded if:
-  // - NODE_ENV is NOT 'production'
-  // - SEED_DEMO_DATA is explicitly 'true'
-  // - initial_seeded is not yet true
-  // - games list is completely empty
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Demo data seeding safeguard for JSON dev mode:
   const explicitDemoRequested = process.env.SEED_DEMO_DATA === 'true';
-
-  if (isProduction || !explicitDemoRequested) {
+  if (!explicitDemoRequested) {
     if (!settings.initial_seeded) {
-      db.updateSettings({ initial_seeded: true });
+      await db.updateSettings({ initial_seeded: true });
     }
     return;
   }
 
-  // If initial seeding has already been recorded, never resurrect deleted records
   if (settings.initial_seeded) {
     return;
   }
 
-  // Only seed demo game if game catalog is empty
-  const existingGames = db.getGames();
+  const existingGames = await db.getGames();
   if (existingGames.length === 0) {
     console.log('[Seed] Seeding initial developer demo Arrow Puzzle game (explicitly enabled)...');
 
@@ -114,7 +152,7 @@ export async function seedDatabase(): Promise<void> {
       '/uploads/images/arrow_puzzle_screenshot_6.jpg',
     ];
 
-    const createdGame = db.createGame({
+    const createdGame = await db.createGame({
       title: 'Arrow Puzzle',
       slug: 'arrow-puzzle',
       tagline: 'A Calming, Tactile Logic Puzzle for Mindful Spatial Focus',
@@ -150,7 +188,7 @@ export async function seedDatabase(): Promise<void> {
       developer: 'Karsh Tech Studio',
     });
 
-    const release = db.createRelease({
+    const release = await db.createRelease({
       game_id: createdGame.id,
       version_name: '1.0.0',
       version_code: 1,
@@ -166,7 +204,7 @@ export async function seedDatabase(): Promise<void> {
       is_published: true,
     });
 
-    db.updateRelease(release.id, {
+    await db.updateRelease(release.id, {
       apk_download_url: `/api/releases/${release.id}/download`,
     });
 
@@ -174,5 +212,5 @@ export async function seedDatabase(): Promise<void> {
   }
 
   // Mark initial seeding complete so demo data is never regenerated
-  db.updateSettings({ initial_seeded: true });
+  await db.updateSettings({ initial_seeded: true });
 }

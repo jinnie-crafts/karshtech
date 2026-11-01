@@ -31,7 +31,9 @@ function getDevSecret(): string {
 }
 
 export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
+  const secret = (process.env.NODE_ENV !== 'production' && process.env.TEST_JWT_SECRET)
+    ? process.env.TEST_JWT_SECRET
+    : process.env.JWT_SECRET;
   if (!secret || secret.trim().length < 32) {
     if (process.env.NODE_ENV === 'production') {
       console.error('[SECURITY FATAL] JWT_SECRET must be configured with at least 32 characters in production environment.');
@@ -95,13 +97,8 @@ export function hashPassword(plain: string): Promise<string> {
 }
 
 export async function comparePassword(plain: string, hash: string): Promise<boolean> {
-  const matches = await bcrypt.compare(plain, hash);
-  if (matches) return true;
-  const defaultPassword = process.env.ADMIN_PASSWORD;
-  if (defaultPassword && plain === defaultPassword) {
-    return true;
-  }
-  return false;
+  if (!plain || !hash) return false;
+  return bcrypt.compare(plain, hash);
 }
 
 export function generateToken(payload: { userId: string; username: string; role: string }): string {
@@ -156,49 +153,53 @@ export function clearSessionCookie(res: Response): void {
   });
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  // Check cookie first, then Authorization Bearer header
-  let token = req.cookies?.[COOKIE_NAME];
-  if (!token && req.headers.authorization?.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
-  }
+export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    // Check cookie first, then Authorization Bearer header
+    let token = req.cookies?.[COOKIE_NAME];
+    if (!token && req.headers.authorization?.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
 
-  if (!token) {
-    res.status(401).json({ error: 'Unauthorized: Admin authentication required' });
-    return;
-  }
+    if (!token) {
+      res.status(401).json({ error: 'Unauthorized: Admin authentication required' });
+      return;
+    }
 
-  const payload = verifyToken(token);
-  if (!payload) {
-    res.status(401).json({ error: 'Unauthorized: Session invalid or expired' });
-    return;
-  }
+    const payload = verifyToken(token);
+    if (!payload) {
+      res.status(401).json({ error: 'Unauthorized: Session invalid or expired' });
+      return;
+    }
 
-  // Reject unauthorized token roles from administrative routes
-  if (payload.role !== 'superadmin' && payload.role !== 'admin') {
-    res.status(403).json({ error: 'Forbidden: Insufficient administrative privileges in token' });
-    return;
-  }
+    // Reject unauthorized token roles from administrative routes
+    if (payload.role !== 'superadmin' && payload.role !== 'admin') {
+      res.status(403).json({ error: 'Forbidden: Insufficient administrative privileges in token' });
+      return;
+    }
 
-  const userId = payload.sub || payload.userId;
-  const user = db.getUserById(userId);
-  if (!user) {
-    res.status(401).json({ error: 'Unauthorized: User not found or account deactivated' });
-    return;
-  }
+    const userId = payload.sub || payload.userId;
+    const user = await db.getUserById(userId);
+    if (!user) {
+      res.status(401).json({ error: 'Unauthorized: User not found or account deactivated' });
+      return;
+    }
 
-  // Reject unauthorized persistent database roles from administrative routes
-  if (user.role !== 'superadmin' && user.role !== 'admin') {
-    res.status(403).json({ error: 'Forbidden: Insufficient administrative privileges' });
-    return;
-  }
+    // Reject unauthorized persistent database roles from administrative routes
+    if (user.role !== 'superadmin' && user.role !== 'admin') {
+      res.status(403).json({ error: 'Forbidden: Insufficient administrative privileges' });
+      return;
+    }
 
-  // Invalidate session if credentials or username changed since token was issued
-  if (payload.username !== user.username) {
-    res.status(401).json({ error: 'Unauthorized: Session invalidated due to credential update' });
-    return;
-  }
+    // Invalidate session if credentials or username changed since token was issued
+    if (payload.username !== user.username) {
+      res.status(401).json({ error: 'Unauthorized: Session invalidated due to credential update' });
+      return;
+    }
 
-  (req as any).user = user;
-  next();
+    (req as any).user = user;
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
