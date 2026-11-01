@@ -984,9 +984,18 @@ export const AdminMediaPage: React.FC = () => {
                             REFERENCED
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-[#242329] text-[#94908D] font-mono">
-                            RELEASE MANAGER ONLY
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssetToDelete(apk);
+                              setDeleteConfirmOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500/50 transition-colors font-medium cursor-pointer"
+                            title="Delete unreferenced dummy APK"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -1580,27 +1589,25 @@ export const AdminMediaPage: React.FC = () => {
                     </button>
                   )}
 
-                  {inspectAsset.bucket === 'release-apks' ? (
-                    <span
-                      title="APK binaries cannot be deleted via generic media library. Manage through Releases."
-                      className="px-4 py-2 rounded-lg bg-[#242329] text-[#94908D] text-xs font-mono"
-                    >
-                      RELEASE MANAGER ONLY
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAssetToDelete(inspectAsset);
-                        setDeleteConfirmOpen(true);
-                      }}
-                      disabled={inspectAsset.is_protected || inspectAsset.is_referenced}
-                      className="px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-bold hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete Asset
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssetToDelete(inspectAsset);
+                      setDeleteConfirmOpen(true);
+                    }}
+                    disabled={inspectAsset.is_protected || inspectAsset.is_referenced}
+                    className="px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-bold hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
+                    title={
+                      inspectAsset.is_protected
+                        ? 'Protected canonical asset cannot be deleted'
+                        : inspectAsset.is_referenced
+                        ? 'Asset is actively referenced in database; detach or remove reference first'
+                        : 'Delete unreferenced asset'
+                    }
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Asset
+                  </button>
                 </div>
               </div>
             </div>

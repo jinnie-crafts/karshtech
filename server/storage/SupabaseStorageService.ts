@@ -278,6 +278,12 @@ export class SupabaseStorageService implements IStorageService {
       return false;
     }
 
+    const deletedItems = (await res.json().catch(() => [])) as Array<{ name: string }>;
+    if (!Array.isArray(deletedItems) || deletedItems.length === 0) {
+      console.warn(`[Storage Safety] Object "${cleanPath}" was not found or not deleted in bucket "${bucket}".`);
+      return false;
+    }
+
     return true;
   }
 

@@ -477,6 +477,59 @@ export async function runMediaManagerTests(): Promise<TestReport[]> {
       assert(meta === null, 'unreferenced_game_banner.jpg deleted from storage');
     });
 
+    await run('DELETION', 'DELETE /api/admin/media returns 404 when asset does not exist in storage', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/media`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ bucket: 'game-assets', path: 'non_existent_unreferenced_asset.jpg' }),
+      });
+      assert(res.status === 404, `Expected 404 for missing storage asset, got ${res.status}`);
+      const body = await res.json();
+      assert(body.error.includes('did not confirm deletion or object was not found'), 'Error specifies storage missing');
+    });
+
+    await run('DELETION', 'DELETE /api/admin/media accepts bucket and path via query parameters', async () => {
+      const testAsset = 'query_param_delete_test.png';
+      mockStorage.seedObject('product-assets', testAsset, validPngBuffer, 'image/png');
+
+      const res = await fetch(`${baseUrl}/api/admin/media?bucket=product-assets&path=${testAsset}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      assert(res.status === 200, `Expected 200 for query-param deletion, got ${res.status}`);
+      const body = await res.json();
+      assert(body.success === true, 'Deletion confirmed');
+
+      const meta = await mockStorage.getObjectMetadata('product-assets', testAsset);
+      assert(meta === null, 'Asset deleted from storage via query params');
+    });
+
+    await run('DELETION', 'DELETE /api/admin/media accepts alternative JSON body fields (name, filename)', async () => {
+      // Test with "name" field
+      const testAsset1 = 'name_field_delete_test.png';
+      mockStorage.seedObject('product-assets', testAsset1, validPngBuffer, 'image/png');
+      const res1 = await fetch(`${baseUrl}/api/admin/media`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ bucket: 'product-assets', name: testAsset1 }),
+      });
+      assert(res1.status === 200, `Expected 200 for name-field deletion, got ${res1.status}`);
+
+      // Test with "filename" field
+      const testAsset2 = 'filename_field_delete_test.png';
+      mockStorage.seedObject('product-assets', testAsset2, validPngBuffer, 'image/png');
+      const res2 = await fetch(`${baseUrl}/api/admin/media`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ bucket: 'product-assets', filename: testAsset2 }),
+      });
+      assert(res2.status === 200, `Expected 200 for filename-field deletion, got ${res2.status}`);
+
+      const meta1 = await mockStorage.getObjectMetadata('product-assets', testAsset1);
+      const meta2 = await mockStorage.getObjectMetadata('product-assets', testAsset2);
+      assert(meta1 === null && meta2 === null, 'Both assets successfully removed via alternative body keys');
+    });
+
     // ==========================================
     // SECTION 6: GAME SCREENSHOT ORCHESTRATOR
     // ==========================================
@@ -1023,31 +1076,68 @@ export async function runMediaManagerTests(): Promise<TestReport[]> {
       });
       assert(res.status === 403, `Expected 403, got ${res.status}`);
       const body = await res.json();
-      assert(body.error.includes('cannot be deleted via the generic media manager'), 'Explicit APK segregation error message');
+      assert(body.error.includes('Cannot delete protected production asset'), 'Explicit protected asset restriction');
 
       // Canonical APK must still exist in storage
       const meta = await mockStorage.getObjectMetadata('release-apks', 'arrow-puzzle-release-v1.0.0.apk');
       assert(meta !== null, 'Canonical APK is preserved in storage');
     });
 
-    await run('APK_PROTECTION', 'Generic DELETE /api/admin/media strictly returns 403 Forbidden for synthetic unreferenced APK in release-apks', async () => {
-      const synApk = 'unreferenced_audit_synthetic.apk';
-      mockStorage.seedObject('release-apks', synApk, validApkBuffer, 'application/vnd.android.package-archive');
-
-      const res = await fetch(`${baseUrl}/api/admin/media?bucket=release-apks&path=${synApk}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${adminToken}` },
+    await run('APK_PROTECTION', 'Generic DELETE /api/admin/media strictly returns 409 Conflict for actively referenced release APK', async () => {
+      // Create a test release referencing active_release_test.apk
+      const activeApkName = 'active_release_test.apk';
+      mockStorage.seedObject('release-apks', activeApkName, validApkBuffer, 'application/vnd.android.package-archive');
+      const tempRelease = await postgresProvider.createRelease({
+        game_id: game.id,
+        version_name: '9.9.9',
+        version_code: 999,
+        release_date: '2026-11-01',
+        release_notes: 'Active release reference test',
+        apk_filename: activeApkName,
+        original_filename: activeApkName,
+        apk_file_size: validApkBuffer.length,
+        apk_download_url: '',
+        min_sdk: 26,
+        target_sdk: 35,
+        is_published: true,
       });
-      assert(res.status === 403, `Expected 403 Forbidden even for unreferenced APK, got ${res.status}`);
+
+      try {
+        const res = await fetch(`${baseUrl}/api/admin/media?bucket=release-apks&path=${activeApkName}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        assert(res.status === 409, `Expected 409 Conflict for referenced APK, got ${res.status}`);
+        const body = await res.json();
+        assert(body.error.includes('actively referenced and cannot be deleted'), 'Referenced release APK rejection error');
+
+        const meta = await mockStorage.getObjectMetadata('release-apks', activeApkName);
+        assert(meta !== null, 'Referenced APK preserved in storage');
+      } finally {
+        await postgresProvider.deleteRelease(tempRelease.id);
+        await mockStorage.deleteObject('release-apks', activeApkName);
+      }
+    });
+
+    await run('APK_PROTECTION', 'Generic DELETE /api/admin/media successfully deletes unreferenced dummy APK from release-apks', async () => {
+      const dummyApk = 'unreferenced_dummy_test.apk';
+      mockStorage.seedObject('release-apks', dummyApk, validApkBuffer, 'application/vnd.android.package-archive');
+
+      const res = await fetch(`${baseUrl}/api/admin/media`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({ bucket: 'release-apks', path: dummyApk }),
+      });
+      assert(res.status === 200, `Expected 200 OK for unreferenced dummy APK deletion, got ${res.status}`);
       const body = await res.json();
-      assert(body.error.includes('cannot be deleted via the generic media manager'), 'APK segregation error message');
+      assert(body.success === true, 'Success flag true');
 
-      // Verify APK was NOT deleted from release-apks
-      const meta = await mockStorage.getObjectMetadata('release-apks', synApk);
-      assert(meta !== null, 'Unreferenced APK remains in release-apks bucket');
-
-      // Cleanup synthetic APK directly in mockStorage
-      await mockStorage.deleteObject('release-apks', synApk);
+      // Verify removed from storage
+      const meta = await mockStorage.getObjectMetadata('release-apks', dummyApk);
+      assert(meta === null, 'Dummy APK deleted from storage');
     });
 
     await run('APK_PROTECTION', 'Media API never exposes public URLs or download tokens for release-apks assets', async () => {

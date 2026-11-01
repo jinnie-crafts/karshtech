@@ -53,6 +53,7 @@ ensureStorageDirectories();
 // Allowed origins for CORS and CSRF protection
 const ALLOWED_ORIGINS = [
   'https://tech.aadirishi.in',
+  'https://www.tech.aadirishi.in',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:3000',
@@ -137,6 +138,7 @@ app.get('/uploads/images/:filename', (req, res, next) => {
 
   try {
     const publicUrl = storageService.getPublicUrl('game-assets', safeFilename);
+    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
     return res.redirect(302, publicUrl);
   } catch {
     next();
@@ -144,9 +146,19 @@ app.get('/uploads/images/:filename', (req, res, next) => {
 });
 
 // Static file serving for uploads (local disk uploads preserved for development/fallback)
-app.use('/uploads', express.static(UPLOADS_DIR));
+// Avatars revalidate quickly (max-age=300) so that profile updates propagate cleanly
+const staticUploadsOptions = {
+  maxAge: '1h',
+  setHeaders: (res: any, filePath: string) => {
+    const base = path.basename(filePath);
+    if (base.startsWith('avatar_')) {
+      res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+    }
+  },
+};
+app.use('/uploads', express.static(UPLOADS_DIR, staticUploadsOptions));
 if (path.resolve(UPLOADS_DIR) !== path.resolve(DEFAULT_REPO_UPLOADS_DIR) && fs.existsSync(DEFAULT_REPO_UPLOADS_DIR)) {
-  app.use('/uploads', express.static(DEFAULT_REPO_UPLOADS_DIR));
+  app.use('/uploads', express.static(DEFAULT_REPO_UPLOADS_DIR, staticUploadsOptions));
 }
 
 // Configure Multer with memory storage for bounded buffers
@@ -768,12 +780,13 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const { username, password } = req.body;
-    if (!username || !password) {
+    const cleanUsername = typeof username === 'string' ? username.trim() : '';
+    if (!cleanUsername || !password) {
       res.status(400).json({ error: 'Username and password are required' });
       return;
     }
 
-    const user = await db.getUserByUsername(username);
+    const user = await db.getUserByUsername(cleanUsername);
     if (!user) {
       recordFailedLogin(ip);
       res.status(401).json({ error: 'Invalid username or password' });
@@ -1958,27 +1971,21 @@ app.get('/api/admin/media/stats', requireAdmin, async (_req, res) => {
   }
 });
 
-// DELETE /api/admin/media - Reference-aware storage deletion with strict private APK protection
+// DELETE /api/admin/media - Reference-aware storage deletion with strict protection for canonical assets & releases
 app.delete('/api/admin/media', requireAdmin, async (req, res) => {
   try {
     const bucket = (req.body.bucket || req.query.bucket) as StorageBucket;
-    const rawPath = String(req.body.path || req.query.path || '').trim();
+    const rawPath = String(
+      req.body.path || req.body.name || req.body.filename ||
+      req.query.path || req.query.name || req.query.filename || ''
+    ).trim();
 
     if (!bucket || !rawPath) {
       res.status(400).json({ error: 'Bucket and path are required for media deletion.' });
       return;
     }
 
-    // Strict Private APK Protection:
-    // Generic DELETE /api/admin/media must reject every request targeting release-apks
-    if (bucket === 'release-apks') {
-      res.status(403).json({
-        error: 'APK release binaries cannot be deleted via the generic media manager. APK releases must be managed through Release Management.',
-      });
-      return;
-    }
-
-    const validBuckets: StorageBucket[] = ['game-assets', 'product-assets'];
+    const validBuckets: StorageBucket[] = ['game-assets', 'product-assets', 'release-apks'];
     if (!validBuckets.includes(bucket)) {
       res.status(400).json({ error: `Invalid bucket "${bucket}". Must be one of: ${validBuckets.join(', ')}` });
       return;
@@ -2033,9 +2040,11 @@ app.delete('/api/admin/media', requireAdmin, async (req, res) => {
       }
 
       let publicUrl: string | null = null;
-      try {
-        publicUrl = storageService.getPublicUrl(bucket, cleanPath);
-      } catch {}
+      if (bucket !== 'release-apks') {
+        try {
+          publicUrl = storageService.getPublicUrl(bucket, cleanPath);
+        } catch {}
+      }
 
       const refs = findAssetReferences(bucket, cleanPath, basename, publicUrl, games, products, releases);
       if (refs.length > 0) {
@@ -2050,7 +2059,9 @@ app.delete('/api/admin/media', requireAdmin, async (req, res) => {
       // 3. Delete from storage
       const deleted = await storageService.deleteObject(bucket, cleanPath);
       if (!deleted) {
-        res.status(404).json({ error: `Failed to delete asset "${cleanPath}" from bucket "${bucket}". Object may not exist.` });
+        res.status(404).json({
+          error: `Failed to delete asset "${cleanPath}" from bucket "${bucket}". Storage provider did not confirm deletion or object was not found.`,
+        });
         return;
       }
 

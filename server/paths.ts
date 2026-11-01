@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 // Authoritative storage directory paths
 export const DEFAULT_REPO_DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
@@ -26,8 +27,58 @@ export const APKS_DIR = path.join(UPLOADS_DIR, 'apks');
 export const IS_PERSISTENT_STORAGE = Boolean(process.env.DATA_DIR || process.env.UPLOADS_DIR);
 
 /**
+ * Computes SHA-256 digest of a file on disk. Returns null if file does not exist or cannot be read.
+ */
+export function getFileSha256(filePath: string): string | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return null;
+    const content = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(content).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Safely synchronizes a bundled source asset to destination using SHA-256 cryptographic verification.
+ * Copies only when source exists and destination hash differs from source hash.
+ * Preserves existing destination file if source is unavailable.
+ */
+export function syncFileWithHash(srcPath: string, destPath: string): boolean {
+  if (!fs.existsSync(srcPath)) return false;
+  const srcStat = fs.statSync(srcPath);
+  if (!srcStat.isFile()) return false;
+
+  if (!fs.existsSync(destPath)) {
+    fs.copyFileSync(srcPath, destPath);
+    return true;
+  }
+
+  const srcHash = getFileSha256(srcPath);
+  const destHash = getFileSha256(destPath);
+
+  if (srcHash && destHash && srcHash !== destHash) {
+    fs.copyFileSync(srcPath, destPath);
+    return true;
+  }
+
+  return false;
+}
+
+// Canonical bundled system assets that should be maintained in sync
+export const BUNDLED_SYSTEM_ASSETS = new Set([
+  'avatar_harsh.png',
+  'avatar_aditya.png',
+  'avatar_komal.png',
+  'default_cover.jpg',
+]);
+
+/**
  * Ensures all required runtime storage directories exist.
- * If running on an external persistent volume, safely migrates default repository assets (such as team avatars).
+ * If running on an external persistent volume, safely synchronizes default repository assets
+ * (such as team avatars) using SHA-256 hash comparison, without touching user-uploaded files.
  */
 export function ensureStorageDirectories(): void {
   const dirsToEnsure = [DATA_DIR, BACKUPS_DIR, UPLOADS_DIR, IMAGES_DIR, APKS_DIR];
@@ -37,19 +88,20 @@ export function ensureStorageDirectories(): void {
     }
   }
 
-  // If using an external persistent uploads directory, copy bundled repository avatars if not present
+  // If using an external persistent uploads directory, synchronize bundled repository avatars and assets
   if (path.resolve(UPLOADS_DIR) !== path.resolve(DEFAULT_REPO_UPLOADS_DIR)) {
     const repoImagesDir = path.join(DEFAULT_REPO_UPLOADS_DIR, 'images');
     if (fs.existsSync(repoImagesDir)) {
       try {
         const repoFiles = fs.readdirSync(repoImagesDir);
         for (const file of repoFiles) {
-          // Copy avatars and default assets if missing in target persistent storage
-          if (file.startsWith('avatar_') || file.startsWith('default_') || file.endsWith('.png') || file.endsWith('.jpg')) {
+          // Strictly synchronize known bundled system assets; NEVER overwrite user-uploaded files
+          if (BUNDLED_SYSTEM_ASSETS.has(file) || file.startsWith('avatar_')) {
             const srcPath = path.join(repoImagesDir, file);
             const destPath = path.join(IMAGES_DIR, file);
-            if (!fs.existsSync(destPath) && fs.statSync(srcPath).isFile()) {
-              fs.copyFileSync(srcPath, destPath);
+            const updated = syncFileWithHash(srcPath, destPath);
+            if (updated) {
+              console.log(`[Storage] Synchronized bundled asset "${file}" via SHA-256 verification.`);
             }
           }
         }

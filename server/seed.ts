@@ -7,6 +7,7 @@ import {
   APKS_DIR,
   DEFAULT_REPO_UPLOADS_DIR,
   ensureStorageDirectories,
+  syncFileWithHash,
 } from './paths.js';
 
 export async function seedDatabase(): Promise<void> {
@@ -92,7 +93,7 @@ export async function seedDatabase(): Promise<void> {
     });
   }
 
-  // Ensure bundled avatars are copied to active uploads directory if missing
+  // Ensure bundled avatars are synchronized to active uploads directory using SHA-256 content verification
   try {
     const repoImagesDir = path.join(DEFAULT_REPO_UPLOADS_DIR, 'images');
     if (fs.existsSync(repoImagesDir)) {
@@ -100,9 +101,7 @@ export async function seedDatabase(): Promise<void> {
       for (const av of avatars) {
         const src = path.join(repoImagesDir, av);
         const dest = path.join(IMAGES_DIR, av);
-        if (fs.existsSync(src) && !fs.existsSync(dest)) {
-          fs.copyFileSync(src, dest);
-        }
+        syncFileWithHash(src, dest);
       }
     }
   } catch (err) {
