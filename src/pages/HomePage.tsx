@@ -484,6 +484,9 @@ export const HomePage: React.FC = () => {
                       src={featuredGame.cover_image || '/uploads/images/default_cover.jpg'}
                       alt={featuredGame.title}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/brand/karsh-tech-k.png';
+                      }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#101014]/90 via-transparent to-transparent pointer-events-none" />
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs text-[#F4F0E8]">

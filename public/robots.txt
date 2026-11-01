@@ -6,5 +6,6 @@ Disallow: /api/admin
 Disallow: /api/admin/
 Disallow: /api/auth
 Disallow: /api/auth/
+Disallow: /api/releases/*/download
 
 Sitemap: https://tech.aadirishi.in/sitemap.xml

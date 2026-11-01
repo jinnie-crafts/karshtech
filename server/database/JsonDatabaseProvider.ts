@@ -9,6 +9,7 @@ import type {
   StudioSettings,
   DatabaseSchema,
   StorageInfo,
+  MediaAssetRecord,
 } from './types.js';
 import {
   DATA_DIR,
@@ -572,5 +573,90 @@ export class JsonDatabaseProvider implements IDatabaseProvider {
     };
     this.save();
     return this.data.settings;
+  }
+
+  // ==========================================
+  // Media Assets Operations (Phase 4.5)
+  // ==========================================
+
+  public async getMediaAssets(bucket?: string): Promise<MediaAssetRecord[]> {
+    const list = Array.isArray(this.data.media_assets) ? [...this.data.media_assets] : [];
+    const sorted = list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    if (bucket && bucket !== 'all') {
+      return sorted.filter((m) => m.bucket === bucket);
+    }
+    return sorted;
+  }
+
+  public async getMediaAssetById(id: string): Promise<MediaAssetRecord | null> {
+    if (!Array.isArray(this.data.media_assets)) return null;
+    return this.data.media_assets.find((m) => m.id === id) || null;
+  }
+
+  public async getMediaAssetByPath(bucket: string, objectPath: string): Promise<MediaAssetRecord | null> {
+    if (!Array.isArray(this.data.media_assets)) return null;
+    const cleanPath = objectPath.replace(/^\/+/, '');
+    return (
+      this.data.media_assets.find((m) => m.bucket === bucket && m.object_path.replace(/^\/+/, '') === cleanPath) ||
+      null
+    );
+  }
+
+  public async createMediaAsset(asset: Omit<MediaAssetRecord, 'created_at' | 'updated_at'>): Promise<MediaAssetRecord> {
+    if (!Array.isArray(this.data.media_assets)) {
+      this.data.media_assets = [];
+    }
+    const cleanPath = asset.object_path.replace(/^\/+/, '');
+    const now = new Date().toISOString();
+    const existingIdx = this.data.media_assets.findIndex(
+      (m) => m.bucket === asset.bucket && m.object_path.replace(/^\/+/, '') === cleanPath
+    );
+
+    const record: MediaAssetRecord = {
+      ...asset,
+      object_path: cleanPath,
+      created_at: existingIdx >= 0 ? this.data.media_assets[existingIdx].created_at : now,
+      updated_at: now,
+    };
+
+    if (existingIdx >= 0) {
+      this.data.media_assets[existingIdx] = record;
+    } else {
+      this.data.media_assets.push(record);
+    }
+    this.save();
+    return record;
+  }
+
+  public async updateMediaAsset(
+    id: string,
+    updates: Partial<Omit<MediaAssetRecord, 'id' | 'created_at'>>
+  ): Promise<MediaAssetRecord | null> {
+    if (!Array.isArray(this.data.media_assets)) return null;
+    const idx = this.data.media_assets.findIndex((m) => m.id === id);
+    if (idx === -1) return null;
+
+    const existing = this.data.media_assets[idx];
+    const updated: MediaAssetRecord = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      created_at: existing.created_at,
+      updated_at: new Date().toISOString(),
+    };
+    this.data.media_assets[idx] = updated;
+    this.save();
+    return updated;
+  }
+
+  public async deleteMediaAsset(id: string): Promise<boolean> {
+    if (!Array.isArray(this.data.media_assets)) return false;
+    const initialLen = this.data.media_assets.length;
+    this.data.media_assets = this.data.media_assets.filter((m) => m.id !== id);
+    if (this.data.media_assets.length < initialLen) {
+      this.save();
+      return true;
+    }
+    return false;
   }
 }

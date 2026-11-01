@@ -90,12 +90,30 @@ export interface StudioSettings {
   initial_seeded?: boolean;
 }
 
+export type MediaAssetCategory = 'screenshot' | 'cover' | 'banner' | 'avatar' | 'gallery' | 'apk' | 'other';
+
+export interface MediaAssetRecord {
+  id: string;
+  bucket: 'game-assets' | 'product-assets' | 'release-apks';
+  object_path: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  sha256: string;
+  category: MediaAssetCategory;
+  is_protected: boolean;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DatabaseSchema {
   games: GameRecord[];
   releases: ReleaseRecord[];
   users: UserRecord[];
   settings: StudioSettings;
   products?: ProductRecord[];
+  media_assets?: MediaAssetRecord[];
 }
 
 export interface StorageInfo {
@@ -108,4 +126,5 @@ export interface StorageInfo {
   releasesCount: number;
   productsCount: number;
   usersCount: number;
+  mediaAssetsCount?: number;
 }

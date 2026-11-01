@@ -285,6 +285,9 @@ export const GameDetailPage: React.FC = () => {
                   src={game.cover_image}
                   alt={game.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = '/brand/karsh-tech-k.png';
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#101014]/90 via-transparent to-transparent" />
                 <div className="absolute bottom-3 right-3 px-3 py-1 rounded border border-[#39363A] bg-[#1A191F]/90 text-[10.5px] font-mono-code text-[#F4F0E8] flex items-center space-x-1.5">
@@ -328,6 +331,9 @@ export const GameDetailPage: React.FC = () => {
                       src={shot}
                       alt={`${game.title} screenshot ${idx + 1}`}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = '/brand/karsh-tech-k.png';
+                  }}
                       loading="lazy"
                     />
                     <div className="absolute inset-0 bg-[#101014]/20 group-hover:bg-transparent transition-colors" />

@@ -69,6 +69,7 @@ export class TestHarness {
     const pool = await this.getTestDatabasePool();
     const migration001Path = path.resolve(process.cwd(), 'supabase/migrations/001_initial_schema.sql');
     const migration002Path = path.resolve(process.cwd(), 'supabase/migrations/002_grant_permissions.sql');
+    const migration003Path = path.resolve(process.cwd(), 'supabase/migrations/003_media_assets_schema.sql');
     if (!fs.existsSync(migration001Path)) {
       throw new Error(`[TestHarness] Migration 001 not found at: ${migration001Path}`);
     }
@@ -115,8 +116,13 @@ export class TestHarness {
         await client.query(sql002);
       }
 
+      if (fs.existsSync(migration003Path)) {
+        const sql003 = fs.readFileSync(migration003Path, 'utf8');
+        await client.query(sql003);
+      }
+
       await client.query('COMMIT;');
-      console.log('[TestHarness] Test schema (001 + 002) and isolation marker applied successfully.');
+      console.log('[TestHarness] Test schema (001 + 002 + 003) and isolation marker applied successfully.');
     } catch (err: any) {
       await client.query('ROLLBACK;');
       throw new Error(`[TestHarness FATAL] Failed to apply test schema: ${err.message}`);

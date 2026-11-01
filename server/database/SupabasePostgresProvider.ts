@@ -7,6 +7,7 @@ import type {
   UserRecord,
   StudioSettings,
   StorageInfo,
+  MediaAssetRecord,
 } from './types.js';
 
 const { Pool } = pg;
@@ -14,6 +15,7 @@ const { Pool } = pg;
 export class SupabasePostgresProvider implements IDatabaseProvider {
   private pool: pg.Pool;
   private initialized = false;
+  private hasMediaAssetsTable = false;
 
   constructor(connectionString?: string) {
     const connStr = connectionString || process.env.DATABASE_URL;
@@ -48,12 +50,12 @@ export class SupabasePostgresProvider implements IDatabaseProvider {
         throw new Error('Database ping query failed');
       }
 
-      // 2. Accessibility validation for all 5 required tables
+      // 2. Accessibility validation for core tables and media_assets detection
       const tablesRes = await this.pool.query(`
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-          AND table_name IN ('users', 'games', 'releases', 'products', 'studio_settings');
+          AND table_name IN ('users', 'games', 'releases', 'products', 'studio_settings', 'media_assets');
       `);
 
       const foundTables = new Set(tablesRes.rows.map((r: any) => r.table_name));
@@ -64,8 +66,10 @@ export class SupabasePostgresProvider implements IDatabaseProvider {
         throw new Error(`Missing expected database table(s): ${missing.join(', ')}`);
       }
 
+      this.hasMediaAssetsTable = foundTables.has('media_assets');
       this.initialized = true;
-      console.log('[DB-Postgres] Supabase PostgreSQL connection pool initialized and verified (5/5 tables online).');
+      const mediaStatus = this.hasMediaAssetsTable ? '+ media_assets online' : '(media_assets pending migration)';
+      console.log(`[DB-Postgres] Supabase PostgreSQL connection pool initialized and verified (5 core tables online ${mediaStatus}).`);
     } catch (err: any) {
       console.error('[DB-Postgres FATAL] Database initialization failed:', err.message);
       throw err;
@@ -184,13 +188,51 @@ export class SupabasePostgresProvider implements IDatabaseProvider {
     };
   }
 
+  private mapMediaAsset(row: any): MediaAssetRecord {
+    return {
+      id: row.id,
+      bucket: row.bucket,
+      object_path: row.object_path,
+      original_filename: row.original_filename,
+      mime_type: row.mime_type,
+      size_bytes: Number(row.size_bytes),
+      sha256: row.sha256,
+      category: row.category,
+      is_protected: Boolean(row.is_protected),
+      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {},
+      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    };
+  }
+
+  private async ensureMediaAssetsTable(): Promise<boolean> {
+    if (this.hasMediaAssetsTable) return true;
+    try {
+      const res = await this.pool.query(`
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'media_assets';
+      `);
+      this.hasMediaAssetsTable = res.rows.length > 0;
+      return this.hasMediaAssetsTable;
+    } catch {
+      return false;
+    }
+  }
+
   public async getStorageInfo(): Promise<StorageInfo> {
+    const hasMedia = await this.ensureMediaAssetsTable();
+    let mediaCountQuery = '0::int AS media_assets_count';
+    if (hasMedia) {
+      mediaCountQuery = '(SELECT COUNT(*) FROM media_assets)::int AS media_assets_count';
+    }
+
     const res = await this.pool.query(`
       SELECT
         (SELECT COUNT(*) FROM games)::int AS games_count,
         (SELECT COUNT(*) FROM releases)::int AS releases_count,
         (SELECT COUNT(*) FROM products)::int AS products_count,
-        (SELECT COUNT(*) FROM users)::int AS users_count;
+        (SELECT COUNT(*) FROM users)::int AS users_count,
+        ${mediaCountQuery};
     `);
     const r = res.rows[0] || {};
     return {
@@ -199,6 +241,7 @@ export class SupabasePostgresProvider implements IDatabaseProvider {
       releasesCount: r.releases_count || 0,
       productsCount: r.products_count || 0,
       usersCount: r.users_count || 0,
+      mediaAssetsCount: r.media_assets_count || 0,
     };
   }
 
@@ -677,5 +720,139 @@ export class SupabasePostgresProvider implements IDatabaseProvider {
       return this.getSettings();
     }
     return this.mapSettings(res.rows[0]);
+  }
+
+  // ==========================================
+  // Media Assets Operations (Phase 4.5)
+  // ==========================================
+
+  public async getMediaAssets(bucket?: string): Promise<MediaAssetRecord[]> {
+    const hasTable = await this.ensureMediaAssetsTable();
+    if (!hasTable) return [];
+
+    let query = 'SELECT * FROM media_assets';
+    const params: any[] = [];
+    if (bucket && bucket !== 'all') {
+      query += ' WHERE bucket = $1';
+      params.push(bucket);
+    }
+    query += ' ORDER BY created_at DESC;';
+
+    const res = await this.pool.query(query, params);
+    return res.rows.map((r: any) => this.mapMediaAsset(r));
+  }
+
+  public async getMediaAssetById(id: string): Promise<MediaAssetRecord | null> {
+    const hasTable = await this.ensureMediaAssetsTable();
+    if (!hasTable) return null;
+
+    const res = await this.pool.query('SELECT * FROM media_assets WHERE id = $1;', [id]);
+    return res.rows.length > 0 ? this.mapMediaAsset(res.rows[0]) : null;
+  }
+
+  public async getMediaAssetByPath(bucket: string, objectPath: string): Promise<MediaAssetRecord | null> {
+    const hasTable = await this.ensureMediaAssetsTable();
+    if (!hasTable) return null;
+
+    const cleanPath = objectPath.replace(/^\/+/, '');
+    const res = await this.pool.query(
+      'SELECT * FROM media_assets WHERE bucket = $1 AND object_path = $2;',
+      [bucket, cleanPath]
+    );
+    return res.rows.length > 0 ? this.mapMediaAsset(res.rows[0]) : null;
+  }
+
+  public async createMediaAsset(asset: Omit<MediaAssetRecord, 'created_at' | 'updated_at'>): Promise<MediaAssetRecord> {
+    const hasTable = await this.ensureMediaAssetsTable();
+    if (!hasTable) {
+      throw new Error('media_assets table does not exist in database.');
+    }
+
+    const cleanPath = asset.object_path.replace(/^\/+/, '');
+    const query = `
+      INSERT INTO media_assets (
+        id, bucket, object_path, original_filename, mime_type, size_bytes, sha256, category, is_protected, metadata, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      ON CONFLICT (bucket, object_path) DO UPDATE SET
+        original_filename = EXCLUDED.original_filename,
+        mime_type = EXCLUDED.mime_type,
+        size_bytes = EXCLUDED.size_bytes,
+        sha256 = EXCLUDED.sha256,
+        category = EXCLUDED.category,
+        is_protected = EXCLUDED.is_protected,
+        metadata = EXCLUDED.metadata,
+        updated_at = NOW()
+      RETURNING *;
+    `;
+
+    const res = await this.pool.query(query, [
+      asset.id,
+      asset.bucket,
+      cleanPath,
+      asset.original_filename,
+      asset.mime_type,
+      asset.size_bytes,
+      asset.sha256,
+      asset.category,
+      asset.is_protected ?? false,
+      JSON.stringify(asset.metadata || {}),
+    ]);
+
+    return this.mapMediaAsset(res.rows[0]);
+  }
+
+  public async updateMediaAsset(
+    id: string,
+    updates: Partial<Omit<MediaAssetRecord, 'id' | 'created_at'>>
+  ): Promise<MediaAssetRecord | null> {
+    const hasTable = await this.ensureMediaAssetsTable();
+    if (!hasTable) return null;
+
+    const allowedKeys: (keyof MediaAssetRecord)[] = [
+      'original_filename',
+      'mime_type',
+      'size_bytes',
+      'sha256',
+      'category',
+      'is_protected',
+      'metadata',
+    ];
+
+    const setClauses: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    for (const key of allowedKeys) {
+      if (key in updates) {
+        setClauses.push(`${key} = $${paramIndex}`);
+        values.push(key === 'metadata' ? JSON.stringify((updates as any)[key]) : (updates as any)[key]);
+        paramIndex++;
+      }
+    }
+
+    if (setClauses.length === 0) {
+      return this.getMediaAssetById(id);
+    }
+
+    setClauses.push('updated_at = NOW()');
+    values.push(id);
+
+    const query = `
+      UPDATE media_assets
+      SET ${setClauses.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING *;
+    `;
+
+    const res = await this.pool.query(query, values);
+    return res.rows.length > 0 ? this.mapMediaAsset(res.rows[0]) : null;
+  }
+
+  public async deleteMediaAsset(id: string): Promise<boolean> {
+    const hasTable = await this.ensureMediaAssetsTable();
+    if (!hasTable) return false;
+
+    const res = await this.pool.query('DELETE FROM media_assets WHERE id = $1;', [id]);
+    return (res.rowCount ?? 0) > 0;
   }
 }

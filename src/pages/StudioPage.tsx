@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { api } from '../lib/api';
 import { motion } from 'framer-motion';
 import { Link } from '../context/RouterContext';
 import { containerVariants, fadeUpVariants } from '../lib/motion';
@@ -20,6 +21,20 @@ import {
 } from 'lucide-react';
 
 export const StudioPage: React.FC = () => {
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
+  const [failedAvatars, setFailedAvatars] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    api.getStats().then((data: any) => {
+      if (data?.media?.avatars) {
+        setAvatarMap({
+          Harsh: data.media.avatars.harsh,
+          Komal: data.media.avatars.komal,
+          Aditya: data.media.avatars.aditya,
+        });
+      }
+    }).catch(() => {});
+  }, []);
   const teamMembers = [
     {
       name: 'Harsh',
@@ -273,7 +288,8 @@ export const StudioPage: React.FC = () => {
             >
               <div className="w-20 h-20 rounded-full overflow-hidden border border-[#39363A] bg-[#242329]">
                 <img
-                  src={member.avatar}
+                  src={avatarMap[member.name] || member.avatar}
+                  onError={() => setFailedAvatars((prev) => ({ ...prev, [member.name]: true }))}
                   alt={member.name}
                   className="w-full h-full object-cover"
                 />

@@ -19,6 +19,9 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
           alt={game.title}
           className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 ease-out"
           loading="lazy"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = '/brand/karsh-tech-k.png';
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#1A191F] via-transparent to-transparent opacity-75" />
 

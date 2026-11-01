@@ -9,8 +9,10 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import multer from 'multer';
 import { db } from './db.js';
+import { MediaService } from './services/MediaService.js';
 import {
   requireAdmin,
   hashPassword,
@@ -47,6 +49,7 @@ import {
 const app = express();
 const PORT = process.env.PORT || 3001;
 const storageService = createStorageService();
+export const mediaService = new MediaService(storageService, db);
 
 ensureStorageDirectories();
 
@@ -295,12 +298,13 @@ app.get('/api/games', async (req, res) => {
       );
     }
 
-    // Attach latest release info to each game
+    // Attach latest release info to each game and resolve canonical CDN media
     const populated = await Promise.all(
       games.map(async (game) => {
         const latestRelease = await db.getLatestReleaseByGameId(game.id, true);
+        const resolved = mediaService.resolveGameMedia(game);
         return {
-          ...game,
+          ...resolved,
           latest_release: latestRelease || undefined,
         };
       })
@@ -332,9 +336,11 @@ app.get('/api/games/:slug', async (req, res) => {
       .filter((r) => r.is_published)
       .sort((a, b) => b.version_code - a.version_code);
 
+    const resolvedGame = mediaService.resolveGameMedia(game);
+
     res.json({
       game: {
-        ...game,
+        ...resolvedGame,
         latest_release: latestRelease || undefined,
         releases: allPublishedReleases,
       },
@@ -412,7 +418,8 @@ app.get('/api/products', async (req, res) => {
       return (b.id || '').localeCompare(a.id || '');
     });
 
-    res.json({ products });
+    const resolvedProducts = products.map((p) => mediaService.resolveProductMedia(p));
+    res.json({ products: resolvedProducts });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch products' });
   }
@@ -457,7 +464,8 @@ app.get('/api/products/:slug', async (req, res) => {
       return;
     }
 
-    res.json({ product });
+    const resolvedProduct = mediaService.resolveProductMedia(product);
+    res.json({ product: resolvedProduct });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch product details' });
   }
@@ -572,6 +580,13 @@ app.get('/api/stats', async (_req, res) => {
         draft_products: products.filter((p) => p.status === 'Draft').length,
       },
       settings,
+      media: {
+        avatars: {
+          harsh: mediaService.resolveCanonicalUrl('avatar_harsh.png', 'game-assets'),
+          komal: mediaService.resolveCanonicalUrl('avatar_komal.png', 'game-assets'),
+          aditya: mediaService.resolveCanonicalUrl('avatar_aditya.png', 'game-assets'),
+        },
+      },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -621,8 +636,20 @@ function getReliableLastmod(dateStr?: string | null): string | undefined {
   return new Date(parsed).toISOString().split('T')[0];
 }
 
-// GET /sitemap.xml - Dynamic XML Sitemap
+let cachedSitemapXml: string | null = null;
+let cachedSitemapTimestamp = 0;
+const SITEMAP_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour in-memory cache
+
+// GET /sitemap.xml - Dynamic XML Sitemap with resilient in-memory caching & fallbacks
 app.get('/sitemap.xml', async (_req, res) => {
+  // 1. Serve fresh in-memory cache if valid
+  if (cachedSitemapXml && Date.now() - cachedSitemapTimestamp < SITEMAP_CACHE_TTL_MS) {
+    res.header('Content-Type', 'application/xml; charset=utf-8');
+    res.header('Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400');
+    res.header('X-Robots-Tag', 'all');
+    return res.send(cachedSitemapXml);
+  }
+
   try {
     const [games, publishedProducts] = await Promise.all([
       db.getGames(),
@@ -637,23 +664,23 @@ app.get('/sitemap.xml', async (_req, res) => {
     }
 
     const staticUrls: SitemapEntry[] = [
-      { loc: `${DOMAIN}/`, priority: '1.0', changefreq: 'daily' },
-      { loc: `${DOMAIN}/products`, priority: '0.9', changefreq: 'weekly' },
-      { loc: `${DOMAIN}/services`, priority: '0.9', changefreq: 'weekly' },
-      { loc: `${DOMAIN}/portfolio`, priority: '0.8', changefreq: 'weekly' },
-      { loc: `${DOMAIN}/games`, priority: '0.8', changefreq: 'weekly' },
-      { loc: `${DOMAIN}/studio`, priority: '0.8', changefreq: 'weekly' },
-      { loc: `${DOMAIN}/contact`, priority: '0.8', changefreq: 'monthly' },
-      { loc: `${DOMAIN}/support`, priority: '0.7', changefreq: 'monthly' },
-      { loc: `${DOMAIN}/privacy`, priority: '0.5', changefreq: 'monthly' },
-      { loc: `${DOMAIN}/terms`, priority: '0.5', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/`, lastmod: '2026-11-01', priority: '1.0', changefreq: 'daily' },
+      { loc: `${DOMAIN}/products`, lastmod: '2026-11-01', priority: '0.9', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/services`, lastmod: '2026-11-01', priority: '0.9', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/portfolio`, lastmod: '2026-11-01', priority: '0.8', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/games`, lastmod: '2026-11-01', priority: '0.8', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/studio`, lastmod: '2026-11-01', priority: '0.8', changefreq: 'weekly' },
+      { loc: `${DOMAIN}/contact`, lastmod: '2026-11-01', priority: '0.8', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/support`, lastmod: '2026-11-01', priority: '0.7', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/privacy`, lastmod: '2026-11-01', priority: '0.5', changefreq: 'monthly' },
+      { loc: `${DOMAIN}/terms`, lastmod: '2026-11-01', priority: '0.5', changefreq: 'monthly' },
     ];
 
     const productUrls: SitemapEntry[] = publishedProducts
       .filter((p) => p && p.slug)
       .map((p) => ({
         loc: `${DOMAIN}/products/${encodeURIComponent(p.slug)}`,
-        lastmod: getReliableLastmod(p.updated_at || p.created_at),
+        lastmod: getReliableLastmod(p.updated_at || p.created_at) || '2026-11-01',
         priority: '0.8',
         changefreq: 'weekly',
       }));
@@ -662,7 +689,7 @@ app.get('/sitemap.xml', async (_req, res) => {
       .filter((g) => g && g.slug)
       .map((game) => ({
         loc: `${DOMAIN}/games/${encodeURIComponent(game.slug)}`,
-        lastmod: getReliableLastmod(game.updated_at || game.created_at),
+        lastmod: getReliableLastmod(game.updated_at || game.created_at) || '2026-11-01',
         priority: '0.8',
         changefreq: 'weekly',
       }));
@@ -692,9 +719,28 @@ ${deduplicatedUrls
   .join('\n')}
 </urlset>`;
 
+    cachedSitemapXml = xml;
+    cachedSitemapTimestamp = Date.now();
+
     res.header('Content-Type', 'application/xml; charset=utf-8');
+    res.header('Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400');
+    res.header('X-Robots-Tag', 'all');
     res.send(xml);
   } catch (err: any) {
+    console.warn('[Sitemap] Dynamic generation warning, using fallback:', err.message);
+    if (cachedSitemapXml) {
+      res.header('Content-Type', 'application/xml; charset=utf-8');
+      res.header('Cache-Control', 'public, max-age=300');
+      res.header('X-Robots-Tag', 'all');
+      return res.send(cachedSitemapXml);
+    }
+    const staticFallbackPath = path.resolve(process.cwd(), 'public/sitemap.xml');
+    if (fs.existsSync(staticFallbackPath)) {
+      res.header('Content-Type', 'application/xml; charset=utf-8');
+      res.header('Cache-Control', 'public, max-age=300');
+      res.header('X-Robots-Tag', 'all');
+      return res.sendFile(staticFallbackPath);
+    }
     res.status(500).send('Error generating sitemap');
   }
 });
@@ -709,10 +755,13 @@ Disallow: /api/admin
 Disallow: /api/admin/
 Disallow: /api/auth
 Disallow: /api/auth/
+Disallow: /api/releases/*/download
 
 Sitemap: ${DOMAIN}/sitemap.xml
 `;
   res.header('Content-Type', 'text/plain; charset=utf-8');
+  res.header('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+  res.header('X-Robots-Tag', 'all');
   res.send(robots);
 });
 
@@ -1431,6 +1480,18 @@ app.post('/api/admin/upload/image', requireAdmin, handleImageUpload, async (req,
       preventOverwrite: true,
     });
 
+    // Register metadata in PostgreSQL media_assets table
+    const sha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    await mediaService.registerAssetMetadata({
+      bucket,
+      objectPath: result.path,
+      originalFilename: req.file.originalname,
+      mimeType: validation.contentType || req.file.mimetype,
+      sizeBytes: result.size,
+      sha256,
+      category: mediaService.inferCategory(result.path, bucket, req.file.mimetype),
+    });
+
     res.json({
       success: true,
       filename: result.path,
@@ -1467,6 +1528,19 @@ app.post('/api/admin/upload/apk', requireAdmin, handleApkUpload, async (req, res
       buffer: req.file.buffer,
       contentType: validation.contentType || 'application/vnd.android.package-archive',
       preventOverwrite: true,
+    });
+
+    // Register metadata in PostgreSQL media_assets table
+    const sha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    await mediaService.registerAssetMetadata({
+      bucket: 'release-apks',
+      objectPath: result.path,
+      originalFilename: sanitizedOriginal,
+      mimeType: 'application/vnd.android.package-archive',
+      sizeBytes: result.size,
+      sha256,
+      category: 'apk',
+      isProtected: false,
     });
 
     res.json({
@@ -2064,6 +2138,14 @@ app.delete('/api/admin/media', requireAdmin, async (req, res) => {
         });
         return;
       }
+
+      // Remove from PostgreSQL media_assets table if present
+      try {
+        const existingAsset = await db.getMediaAssetByPath(bucket, cleanPath);
+        if (existingAsset) {
+          await db.deleteMediaAsset(existingAsset.id);
+        }
+      } catch {}
 
       res.json({
         success: true,

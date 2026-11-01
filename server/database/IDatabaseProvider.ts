@@ -5,6 +5,7 @@ import type {
   UserRecord,
   StudioSettings,
   StorageInfo,
+  MediaAssetRecord,
 } from './types.js';
 
 export interface IDatabaseProvider {
@@ -63,4 +64,14 @@ export interface IDatabaseProvider {
    */
   getSettings(): Promise<StudioSettings>;
   updateSettings(settings: Partial<StudioSettings>): Promise<StudioSettings>;
+
+  /**
+   * Media Assets Operations (Phase 4.5)
+   */
+  getMediaAssets(bucket?: string): Promise<MediaAssetRecord[]>;
+  getMediaAssetById(id: string): Promise<MediaAssetRecord | null>;
+  getMediaAssetByPath(bucket: string, objectPath: string): Promise<MediaAssetRecord | null>;
+  createMediaAsset(asset: Omit<MediaAssetRecord, 'created_at' | 'updated_at'>): Promise<MediaAssetRecord>;
+  updateMediaAsset(id: string, updates: Partial<Omit<MediaAssetRecord, 'id' | 'created_at'>>): Promise<MediaAssetRecord | null>;
+  deleteMediaAsset(id: string): Promise<boolean>;
 }
