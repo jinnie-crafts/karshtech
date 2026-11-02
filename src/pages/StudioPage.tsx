@@ -36,13 +36,7 @@ export const StudioPage: React.FC = () => {
     }).catch(() => { });
   }, []);
   const teamMembers = [
-    {
-      name: 'Harsh',
-      role: 'Founder & Lead Engineer',
-      avatar: '/uploads/images/avatar_harsh.png?v=1.0.1',
-      focus: 'Engineering Leadership, System Architecture, Full-Stack Development',
-      bio: 'Founded Karsh Tech with a vision to build meaningful digital products. Leads engineering architecture, technical strategy, and end-to-end product development across web, mobile, and software platforms.'
-    },
+   
     // {
     //   name: 'Komal',
     //   role: 'Developer & UI/UX Designer',
@@ -50,6 +44,13 @@ export const StudioPage: React.FC = () => {
     //   focus: 'UI/UX Design, Frontend Development, Product Experience',
     //   bio: 'Bridges design and development to create intuitive, visually refined digital experiences. Focuses on user-centered interfaces, responsive layouts, design systems, and turning ideas into functional products.'
     // },
+     {
+      name: 'Harsh',
+      role: 'Founder & Lead Engineer',
+      avatar: '/uploads/images/avatar_harsh.png?v=1.0.1',
+      focus: 'Engineering Leadership, System Architecture, Full-Stack Development',
+      bio: 'Founded Karsh Tech with a vision to build meaningful digital products. Leads engineering architecture, technical strategy, and end-to-end product development across web, mobile, and software platforms.'
+    },
     // {
     //   name: 'Aditya',
     //   role: 'Development Contributor',
