@@ -17,7 +17,7 @@ export const TermsPage: React.FC = () => {
           Terms of Service
         </h1>
         <p className="text-xs text-[#96929A] mt-1.5 font-mono-code">
-          Last Updated: October 30, 2026 • Organization: Karsh Tech (https://tech.aadirishi.in)
+          Last Updated: November 02, 2026 • Organization: Karsh Tech (https://tech.aadirishi.in)
         </p>
       </div>
 
@@ -41,7 +41,7 @@ export const TermsPage: React.FC = () => {
             1. Acceptance of Terms
           </h2>
           <p>
-            By accessing or using the website located at <Link href="/" className="text-[#FF5A36] underline">https://tech.aadirishi.in</Link>, by commissioning technical services, or by downloading, installing, or executing any digital software, applications, or games provided by <strong className="text-[#F4F0E8]">Karsh Tech</strong> ("we", "us", or "our"), you agree to be bound by these Terms of Service.
+            By accessing or using the website located at <Link href="/" className="text-[#FF5A36] underline">https://tech.aadirishi.in</Link>, by commissioning technical services, or by downloading, installing, or executing any digital software, applications, or games provided by <strong className="text-[#F4F0E8]">Karsh Tech</strong>, you agree to be bound by these Terms of Service.
           </p>
           <p>
             If you do not agree to all provisions of these Terms, you must immediately cease accessing this website and refrain from using or installing our software.
@@ -171,7 +171,7 @@ export const TermsPage: React.FC = () => {
           </p>
           <div className="p-4 rounded-lg border border-[#39363A] bg-[#101014] text-[#96929A] space-y-1">
             <span className="text-[#FF5A36] font-mono-code font-semibold block text-[11px]">
-              [LEGAL JURISDICTION PLACEHOLDER — SUBJECT TO FORMAL REVIEW]
+              GOVERNING LAW: INDIA
             </span>
             <p>
               Governing Jurisdiction: Applicable Law of India / Local Jurisdiction under which Karsh Tech business operations are established. Any disputes arising hereunder shall be subject to the competent courts of the applicable operational jurisdiction.

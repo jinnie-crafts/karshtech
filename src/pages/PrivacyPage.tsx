@@ -17,7 +17,7 @@ export const PrivacyPage: React.FC = () => {
           Privacy Policy
         </h1>
         <p className="text-xs text-[#96929A] mt-1.5 font-mono-code">
-          Effective Date: October 30, 2026 • Organization: Karsh Tech (https://tech.aadirishi.in)
+          Effective Date: November 02, 2026 • Organization: Karsh Tech (https://tech.aadirishi.in)
         </p>
       </div>
 
@@ -41,7 +41,7 @@ export const PrivacyPage: React.FC = () => {
             1. Introduction
           </h2>
           <p>
-            This Privacy Policy governs the processing of information collected by <strong className="text-[#F4F0E8]">Karsh Tech</strong> ("we", "us", or "our") through our official website (<Link href="/" className="text-[#FF5A36] underline">https://tech.aadirishi.in</Link>), our hosted web applications, our custom software solutions, and standalone mobile applications and games distributed through our platform.
+            This Privacy Policy governs the processing of information collected by <strong className="text-[#F4F0E8]">Karsh Tech</strong> through our official website (<Link href="/" className="text-[#FF5A36] underline">https://tech.aadirishi.in</Link>), our hosted web applications, our custom software solutions, and standalone mobile applications and games distributed through our platform.
           </p>
           <p>
             By accessing our website or utilizing our products, you acknowledge the data handling practices described herein. If you have any questions, our primary contact is <a href="mailto:karshhtech@gmail.com" className="text-[#FF5A36] underline font-mono-code">karshhtech@gmail.com</a>.
@@ -59,9 +59,6 @@ export const PrivacyPage: React.FC = () => {
           <ul className="list-disc list-inside space-y-2 text-[#96929A] pl-2">
             <li>
               <strong className="text-[#F4F0E8]">Contact and Project Inquiries:</strong> When you voluntarily submit a message via our Contact or Support forms, we collect your name, email address, optional topic/category, subject, and the message content you provide.
-            </li>
-            <li>
-              <strong className="text-[#F4F0E8]">Administrative Credentials:</strong> For authorized Karsh Tech team members accessing the private management console (`/admin`), internal account usernames, cryptographic password hashes, and authentication tokens are processed.
             </li>
             <li>
               <strong className="text-[#F4F0E8]">Server Technical Logs:</strong> Standard HTTP server requests process ephemeral technical headers (including IP address, requested URL, user agent, and timestamp) in server memory solely for brute-force rate-limiting, denial-of-service defense, and network error diagnosis.
@@ -98,9 +95,6 @@ export const PrivacyPage: React.FC = () => {
           </h2>
           <p>
             Our public website does <strong className="text-[#F4F0E8]">not</strong> use tracking cookies, marketing cookies, or persistent visitor identification beacons.
-          </p>
-          <p>
-            When an authorized administrator logs into the private console (`/admin`), our system issues an HTTP-only session cookie named <code className="text-[#FF5A36] bg-[#1A191F] px-1.5 py-0.5 rounded font-mono-code">karsh_session</code>. This cookie is protected with <code className="text-[#C2BEC1] font-mono-code">SameSite=Lax</code> and <code className="text-[#C2BEC1] font-mono-code">Secure</code> attributes over HTTPS and is used solely to authenticate administrative dashboard sessions. Logging out immediately clears this cookie.
           </p>
         </section>
 
@@ -145,9 +139,6 @@ export const PrivacyPage: React.FC = () => {
           </p>
           <ul className="list-disc list-inside space-y-1.5 text-[#96929A] pl-2">
             <li>All administrative communications and data transfers are encrypted in transit over Transport Layer Security (TLS/HTTPS).</li>
-            <li>Administrative passwords are encrypted using salted Bcrypt algorithms.</li>
-            <li>Administrative authentication tokens utilize cryptographic HS256 JWT signing verified against persistent storage.</li>
-            <li>Database transactions utilize atomic file-write-and-rename durability mechanisms.</li>
           </ul>
           <p className="text-[#96929A] italic">
             While we implement rigorous engineering safeguards, no electronic transmission or server storage method is guaranteed to be 100% immune from security vulnerabilities. We advise against sending sensitive passwords or financial credentials through general contact forms.
