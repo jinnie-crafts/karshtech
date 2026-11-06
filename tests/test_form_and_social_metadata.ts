@@ -297,6 +297,15 @@ export async function runFormAndSocialMetadataTests(): Promise<TestReport[]> {
       assert(html.includes('rel="canonical" href="https://tech.aadirishi.in/games/test-space-odyssey"'), 'Canonical URL points to game slug');
     });
 
+    await run('METADATA', 'GET /games/space-odyssey (alias) fuzzy matches game and normalizes canonical URL', async () => {
+      const res = await fetch(`${baseUrl}/games/space-odyssey`);
+      assert(res.status === 200, `Expected 200, got ${res.status}`);
+      const html = await res.text();
+
+      assert(html.includes('Test Space Odyssey — Official Game by Karsh Tech'), 'Title tag contains dynamic game title');
+      assert(html.includes('rel="canonical" href="https://tech.aadirishi.in/games/test-space-odyssey"'), 'Canonical points to canonical slug');
+    });
+
     await run('METADATA', 'GET /services returns Services engineering metadata', async () => {
       const res = await fetch(`${baseUrl}/services`);
       assert(res.status === 200, `Expected 200, got ${res.status}`);

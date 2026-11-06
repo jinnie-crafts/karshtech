@@ -96,7 +96,22 @@ export class MetadataService {
     if (cleanPath.startsWith('/products/')) {
       const slug = cleanPath.replace('/products/', '').trim();
       try {
-        const product = await this.db.getProductBySlug(slug);
+        let product = await this.db.getProductBySlug(slug);
+        if (!product) {
+          const allProducts = await this.db.getProducts();
+          const norm = slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+          product =
+            allProducts.find((p) => {
+              const pNorm = p.slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const nameNorm = p.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return (
+                pNorm === norm ||
+                nameNorm === norm ||
+                (norm.length >= 4 && (pNorm.includes(norm) || norm.includes(pNorm))) ||
+                (norm.length >= 4 && (nameNorm.includes(norm) || norm.includes(nameNorm)))
+              );
+            }) || undefined;
+        }
         if (product && product.status !== 'Draft') {
           const rawCover = product.cover_image;
           const canonicalCover = rawCover
@@ -145,7 +160,22 @@ export class MetadataService {
     if (cleanPath.startsWith('/games/')) {
       const slug = cleanPath.replace('/games/', '').trim();
       try {
-        const game = await this.db.getGameBySlug(slug);
+        let game = await this.db.getGameBySlug(slug);
+        if (!game) {
+          const allGames = await this.db.getGames();
+          const norm = slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+          game =
+            allGames.find((g) => {
+              const gNorm = g.slug.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const titleNorm = g.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return (
+                gNorm === norm ||
+                titleNorm === norm ||
+                (norm.length >= 4 && (gNorm.includes(norm) || norm.includes(gNorm))) ||
+                (norm.length >= 4 && (titleNorm.includes(norm) || norm.includes(titleNorm)))
+              );
+            }) || undefined;
+        }
         if (game) {
           const rawCover = game.cover_image;
           const canonicalCover = rawCover
