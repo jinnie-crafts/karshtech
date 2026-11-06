@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
+import { submitKarshTechForm } from '../lib/formSubmission';
 import { containerVariants, fadeUpVariants } from '../lib/motion';
 import {
   Mail,
@@ -26,6 +27,7 @@ export const ContactPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [botcheck, setBotcheck] = useState('');
 
   const categories = [
     'Website Development',
@@ -64,6 +66,7 @@ export const ContactPage: React.FC = () => {
       subject: '',
       message: '',
     });
+    setBotcheck('');
     setErrorMessage(null);
   };
 
@@ -71,94 +74,25 @@ export const ContactPage: React.FC = () => {
     e.preventDefault();
     if (isSubmitting) return;
 
-    const trimmedName = formData.name.trim();
-    const trimmedEmail = formData.email.trim();
-    const trimmedSubject = formData.subject.trim();
-    const trimmedMessage = formData.message.trim();
-
-    if (!trimmedName || !trimmedEmail || !trimmedMessage) {
-      setErrorMessage('All transmission channels (Name, Email, Message) are required. Please complete all fields.');
-      return;
-    }
-
     setIsSubmitting(true);
     setErrorMessage(null);
 
     try {
-      const accessKey = import.meta.env.VITE_WEB3FORMS_ACCESS_KEY || '';
-
-      const payload = new FormData();
-      payload.append('access_key', accessKey);
-      payload.append('name', trimmedName);
-      payload.append('email', trimmedEmail);
-      payload.append(
-        'subject',
-        `[Karsh Tech - ${formData.category}] ${trimmedSubject || `Inquiry from ${trimmedName}`}`
+      await submitKarshTechForm({
+        name: formData.name,
+        email: formData.email,
+        category: formData.category,
+        subject: formData.subject || `Inquiry from ${formData.name}`,
+        message: formData.message,
+        botcheck,
+        formType: 'contact',
+      });
+      setSent(true);
+      setErrorMessage(null);
+    } catch (err: any) {
+      setErrorMessage(
+        err.message || 'Transmission failed to dispatch. Please verify your details or email karshhtech@gmail.com directly.'
       );
-      payload.append('category', formData.category);
-      payload.append('message', trimmedMessage);
-      payload.append('to_email', 'karshhtech@gmail.com');
-      payload.append('from_name', `${trimmedName} (via Karsh Tech Portal)`);
-
-      let isSuccess = false;
-      let failureReason = '';
-
-      // Direct Web3Forms submission
-      if (accessKey) {
-        try {
-          const response = await fetch('https://api.web3forms.com/submit', {
-            method: 'POST',
-            headers: {
-              Accept: 'application/json',
-            },
-            body: payload,
-          });
-
-          let data: { success?: boolean; message?: string } | null = null;
-          try {
-            data = await response.json();
-          } catch {
-            // non-json response
-          }
-
-          if (response.ok && data?.success) {
-            isSuccess = true;
-          } else {
-            failureReason = data?.message || 'Web3Forms service reported an issue with the dispatch.';
-          }
-        } catch (fetchErr: any) {
-          // If browser is offline or CORS issue
-          failureReason = fetchErr?.message || 'Network dispatch interrupted.';
-        }
-      }
-
-      // Concurrently log transmission to backend for audit trail & resiliency
-      try {
-        await api.submitContact({
-          name: trimmedName,
-          email: trimmedEmail,
-          category: formData.category,
-          subject: trimmedSubject,
-          message: trimmedMessage,
-        });
-        // If client-side Web3Forms key was absent, backend acknowledgement suffices
-        if (!accessKey) {
-          isSuccess = true;
-        }
-      } catch {
-        // Backend logging error is non-fatal if Web3Forms succeeded
-      }
-
-      if (isSuccess) {
-        setSent(true);
-        setErrorMessage(null);
-      } else {
-        setErrorMessage(
-          failureReason || 'Transmission failed to dispatch. Please verify your details and retry, or email karshhtech@gmail.com directly.'
-        );
-      }
-    } catch {
-      setErrorMessage('Network connection lost. Please verify your internet connection and retry.');
     } finally {
       setIsSubmitting(false);
     }
@@ -397,27 +331,49 @@ export const ContactPage: React.FC = () => {
                       </p>
                     </div>
 
-                    {/* Error Alert with Dismiss */}
+                    {/* Error Alert with Dismiss & Direct Email Fallback */}
                     {errorMessage && (
                       <div
                         role="alert"
-                        className="p-3.5 rounded border border-red-500/50 bg-red-950/30 text-red-200 text-xs font-mono-code flex items-center justify-between"
+                        className="p-4 rounded border border-red-500/50 bg-red-950/30 text-red-200 text-xs font-mono-code space-y-2.5"
                       >
-                        <div className="flex items-center space-x-2">
-                          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                          <span>{errorMessage}</span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                            <span>{errorMessage}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setErrorMessage(null)}
+                            className="text-[10px] tracking-widest uppercase text-[#96929A] hover:text-white ml-2 transition-colors cursor-pointer"
+                          >
+                            DISMISS
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setErrorMessage(null)}
-                          className="text-[10px] tracking-widest uppercase text-[#96929A] hover:text-white ml-2 transition-colors cursor-pointer"
-                        >
-                          DISMISS
-                        </button>
+                        <div className="pt-2 border-t border-red-500/20 flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-[#C2BEC1]">Having trouble? Send directly via your email client:</span>
+                          <a
+                            href={`mailto:karshhtech@gmail.com?subject=${encodeURIComponent(`[Karsh Tech Inquiry] ${formData.category}: ${formData.subject || formData.name}`)}&body=${encodeURIComponent(formData.message)}`}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1 rounded bg-[#FF5A36] text-[#101014] text-[11px] font-bold hover:bg-[#FF7454] transition-colors"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>Email karshhtech@gmail.com</span>
+                          </a>
+                        </div>
                       </div>
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-4">
+                      {/* Honeypot Spam Protection Field */}
+                      <input
+                        type="text"
+                        name="botcheck"
+                        value={botcheck}
+                        onChange={(e) => setBotcheck(e.target.value)}
+                        style={{ display: 'none' }}
+                        tabIndex={-1}
+                        autoComplete="off"
+                      />
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Name */}
                         <div>

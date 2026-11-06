@@ -62,6 +62,39 @@ const AppContent: React.FC = () => {
   // Route normalization helper (strips trailing slashes, hash anchors, and queries)
   const normalizedPath = path.split('#')[0].split('?')[0].replace(/\/+$/, '') || '/';
 
+  // Synchronize document title and canonical URL on client-side navigation
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      '/': 'Karsh Tech — Technology & Digital Product Development Organization',
+      '/products': 'Products & Digital Solutions — Karsh Tech',
+      '/services': 'Engineering & Development Services — Karsh Tech',
+      '/portfolio': 'Project Portfolio & Engineering Showcase — Karsh Tech',
+      '/projects': 'Project Portfolio & Engineering Showcase — Karsh Tech',
+      '/games': 'Games & Interactive Experiences — Karsh Tech',
+      '/studio': 'Engineering Team & Studio Philosophy — Karsh Tech',
+      '/about': 'Engineering Team & Studio Philosophy — Karsh Tech',
+      '/contact': 'Contact & Technical Consultation — Karsh Tech',
+      '/support': 'Support & Technical Assistance — Karsh Tech',
+      '/privacy': 'Privacy Policy & Data Ethics — Karsh Tech',
+      '/terms': 'Terms of Service — Karsh Tech',
+    };
+
+    if (titles[normalizedPath]) {
+      document.title = titles[normalizedPath];
+    } else if (normalizedPath.startsWith('/admin')) {
+      document.title = 'Admin Console — Karsh Tech';
+    }
+
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonical);
+    }
+    const cleanUrl = `https://tech.aadirishi.in${normalizedPath === '/' ? '/' : normalizedPath}`;
+    canonical.setAttribute('href', cleanUrl);
+  }, [normalizedPath]);
+
   // Admin routing check
   if (normalizedPath === '/admin/login') {
     return <AdminLoginPage />;

@@ -46,6 +46,9 @@ export const GameDetailPage: React.FC = () => {
         setError(null);
         const data = await api.getGameBySlug(slug);
         setGame(data.game);
+        if (data.game?.title) {
+          document.title = `${data.game.title} — Official Game by Karsh Tech`;
+        }
 
         const all = await api.getGames();
         setRelatedGames(all.filter((g) => g.slug !== slug).slice(0, 3));

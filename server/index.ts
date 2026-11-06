@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import multer from 'multer';
 import { db } from './db.js';
 import { MediaService } from './services/MediaService.js';
+import { MetadataService } from './services/MetadataService.js';
 import {
   requireAdmin,
   hashPassword,
@@ -50,6 +51,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const storageService = createStorageService();
 export const mediaService = new MediaService(storageService, db);
+export const metadataService = new MetadataService(db, mediaService);
 
 ensureStorageDirectories();
 
@@ -593,16 +595,32 @@ app.get('/api/stats', async (_req, res) => {
   }
 });
 
-// POST /api/support and /api/contact - Inquiries, Contact and Support
+// GET /api/contact/config - Public configuration for contact and support form dispatch
+app.get('/api/contact/config', (_req, res) => {
+  const key = process.env.VITE_WEB3FORMS_ACCESS_KEY || process.env.WEB3FORMS_ACCESS_KEY || '';
+  res.json({
+    configured: Boolean(key),
+    key: key || undefined,
+  });
+});
+
+// POST /api/support and /api/contact - Inquiries, Contact and Support Audit Trail
 app.post(['/api/support', '/api/contact'], (req, res) => {
-  const { name, email, category, game, subject, message } = req.body;
+  const { name, email, category, game, subject, message, botcheck } = req.body;
+  if (botcheck && typeof botcheck === 'string' && botcheck.trim().length > 0) {
+    return res.status(400).json({ error: 'Spam transmission rejected.' });
+  }
   if (!name || !email || !message) {
     res.status(400).json({ error: 'Name, email, and message are required.' });
     return;
   }
+  const cleanName = String(name).trim().slice(0, 100);
+  const cleanEmail = String(email).trim().slice(0, 150);
+  const cleanSubject = String(subject || '').trim().slice(0, 200);
+  const cleanMessage = String(message).trim().slice(0, 10000);
   const topic = category || game || 'General Inquiry';
-  console.log(`[Contact / Support] From: ${name} <${email}> | Topic: ${topic} | Subject: ${subject || 'No Subject'}`);
-  res.json({ success: true, message: 'Your transmission has been received by Karsh Tech. Our team will review it and reply shortly.' });
+  console.log(`[Contact / Support Audit] [${new Date().toISOString()}] From: ${cleanName} <${cleanEmail}> | Topic: ${topic} | Subject: ${cleanSubject || 'No Subject'} | PayloadLen: ${cleanMessage.length}`);
+  res.json({ success: true, message: 'Your transmission has been logged by Karsh Tech servers.' });
 });
 
 // ==========================================
@@ -2449,15 +2467,35 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 });
 
 // ==========================================
-// PRODUCTION FRONTEND HANDLER
+// PRODUCTION FRONTEND & SOCIAL METADATA HANDLER
 // ==========================================
 const distPath = path.resolve(process.cwd(), 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
+  // Serve static assets (js, css, images) directly, with index: false so routes fall through to metadata injection
+  app.use(express.static(distPath, { index: false }));
 }
+
+app.get('*', async (req, res, next) => {
+  // Skip API and uploads routes
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+    return next();
+  }
+
+  try {
+    const template = metadataService.getTemplate();
+    const meta = await metadataService.resolveMetadata(req.path);
+    const injectedHtml = metadataService.injectMetadata(template, meta);
+    res.header('Content-Type', 'text/html; charset=utf-8');
+    res.send(injectedHtml);
+  } catch (err: any) {
+    console.warn('[MetadataInjection] Error injecting metadata, falling back to raw index.html:', err.message);
+    if (fs.existsSync(path.join(distPath, 'index.html'))) {
+      res.sendFile(path.join(distPath, 'index.html'));
+    } else {
+      next(err);
+    }
+  }
+});
 
 // Start Server
 async function startServer() {

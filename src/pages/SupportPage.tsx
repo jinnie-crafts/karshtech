@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../lib/api';
+import { submitKarshTechForm } from '../lib/formSubmission';
 import { Link } from '../context/RouterContext';
 import {
   Mail,
@@ -27,6 +28,7 @@ export const SupportPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [botcheck, setBotcheck] = useState('');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   const supportTopics = [
@@ -63,12 +65,21 @@ export const SupportPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError(null);
     setSuccess(false);
 
     try {
-      await api.submitSupport(formData);
+      await submitKarshTechForm({
+        name: formData.name,
+        email: formData.email,
+        game: formData.game,
+        subject: formData.subject || `Support Ticket: ${formData.game}`,
+        message: formData.message,
+        botcheck,
+        formType: 'support',
+      });
       setSuccess(true);
       setFormData({
         name: '',
@@ -77,6 +88,7 @@ export const SupportPage: React.FC = () => {
         subject: '',
         message: '',
       });
+      setBotcheck('');
     } catch (err: any) {
       setError(err.message || 'Failed to dispatch transmission. Please try again or email us directly.');
     } finally {
@@ -128,16 +140,38 @@ export const SupportPage: React.FC = () => {
             )}
 
             {error && (
-              <div className="mb-6 p-4 rounded bg-red-950/30 border border-red-500/40 flex items-start space-x-3 text-xs text-red-300">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-400" />
-                <div>
-                  <div className="font-bold text-sm">Transmission Error</div>
-                  <div className="mt-0.5">{error}</div>
+              <div className="mb-6 p-4 rounded bg-red-950/30 border border-red-500/40 space-y-3 text-xs text-red-300">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-400 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-sm">Transmission Error</div>
+                    <div className="mt-0.5 leading-relaxed">{error}</div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-red-500/20 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-[#C2BEC1]">Having trouble? Dispatch ticket directly via email:</span>
+                  <a
+                    href={`mailto:karshhtech@gmail.com?subject=${encodeURIComponent(`[Karsh Tech Support] ${formData.game}: ${formData.subject || formData.name}`)}&body=${encodeURIComponent(formData.message)}`}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1 rounded bg-[#FF5A36] text-[#101014] text-[11px] font-bold hover:bg-[#FF7454] transition-colors"
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span>Email karshhtech@gmail.com</span>
+                  </a>
                 </div>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Honeypot Spam Protection Field */}
+              <input
+                type="text"
+                name="botcheck"
+                value={botcheck}
+                onChange={(e) => setBotcheck(e.target.value)}
+                style={{ display: 'none' }}
+                tabIndex={-1}
+                autoComplete="off"
+              />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-mono-code text-[#96929A] uppercase mb-1.5 font-semibold">
