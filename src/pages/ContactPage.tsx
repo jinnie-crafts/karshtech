@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../lib/api';
 import { submitKarshTechForm } from '../lib/formSubmission';
@@ -28,6 +28,7 @@ export const ContactPage: React.FC = () => {
   const [sent, setSent] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [botcheck, setBotcheck] = useState('');
+  const formStartedAt = useRef<number>(Date.now());
 
   const categories = [
     'Website Development',
@@ -52,6 +53,7 @@ export const ContactPage: React.FC = () => {
         message: '',
       });
       setErrorMessage(null);
+      formStartedAt.current = Date.now();
     }, 5000);
 
     return () => clearTimeout(timer);
@@ -68,6 +70,7 @@ export const ContactPage: React.FC = () => {
     });
     setBotcheck('');
     setErrorMessage(null);
+    formStartedAt.current = Date.now();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,6 +88,7 @@ export const ContactPage: React.FC = () => {
         subject: formData.subject || `Inquiry from ${formData.name}`,
         message: formData.message,
         botcheck,
+        formStartedAt: formStartedAt.current,
         formType: 'contact',
       });
       setSent(true);
@@ -383,6 +387,7 @@ export const ContactPage: React.FC = () => {
                           <input
                             type="text"
                             required
+                            maxLength={100}
                             disabled={isSubmitting}
                             value={formData.name}
                             onChange={(e) => {
@@ -402,6 +407,7 @@ export const ContactPage: React.FC = () => {
                           <input
                             type="email"
                             required
+                            maxLength={150}
                             disabled={isSubmitting}
                             value={formData.email}
                             onChange={(e) => {
@@ -441,6 +447,7 @@ export const ContactPage: React.FC = () => {
                           </label>
                           <input
                             type="text"
+                            maxLength={200}
                             disabled={isSubmitting}
                             value={formData.subject}
                             onChange={(e) => {
@@ -461,6 +468,7 @@ export const ContactPage: React.FC = () => {
                         <textarea
                           required
                           rows={5}
+                          maxLength={5000}
                           disabled={isSubmitting}
                           value={formData.message}
                           onChange={(e) => {

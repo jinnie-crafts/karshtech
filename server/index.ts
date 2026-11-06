@@ -46,8 +46,22 @@ import {
   generateObjectPath,
   type StorageBucket,
 } from './storage/index.js';
+import {
+  contactRateLimiter,
+  supportRateLimiter,
+  configRateLimiter,
+} from './middleware/rateLimiter.js';
+import {
+  validateFormSubmissionMiddleware,
+  maskEmail,
+  type ValidatedFormBody,
+} from './middleware/formValidation.js';
 
 const app = express();
+// Configure Express to trust 1 reverse-proxy hop (Render edge proxy)
+// This guarantees req.ip is extracted from the trusted proxy without spoofing
+app.set('trust proxy', 1);
+
 const PORT = process.env.PORT || 3001;
 const storageService = createStorageService();
 export const mediaService = new MediaService(storageService, db);
@@ -595,31 +609,41 @@ app.get('/api/stats', async (_req, res) => {
   }
 });
 
-// GET /api/contact/config - Public configuration for contact and support form dispatch
-app.get('/api/contact/config', (_req, res) => {
-  const key = process.env.VITE_WEB3FORMS_ACCESS_KEY || process.env.WEB3FORMS_ACCESS_KEY || '';
+// GET /api/contact/config - Public non-sensitive status for contact/support form configuration
+// Protected with dedicated rate limit (30 requests per 15 minutes per IP).
+// Strictly returns boolean configuration status without exposing credentials or keys.
+app.get('/api/contact/config', configRateLimiter, (_req, res) => {
+  const isConfigured = Boolean(
+    (process.env.VITE_WEB3FORMS_ACCESS_KEY && process.env.VITE_WEB3FORMS_ACCESS_KEY.trim().length > 0) ||
+    (process.env.WEB3FORMS_ACCESS_KEY && process.env.WEB3FORMS_ACCESS_KEY.trim().length > 0)
+  );
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.json({
-    configured: Boolean(key),
-    key: key || undefined,
+    configured: isConfigured,
   });
 });
 
-// POST /api/support and /api/contact - Inquiries, Contact and Support Audit Trail
-app.post(['/api/support', '/api/contact'], (req, res) => {
-  const { name, email, category, game, subject, message, botcheck } = req.body;
-  if (botcheck && typeof botcheck === 'string' && botcheck.trim().length > 0) {
-    return res.status(400).json({ error: 'Spam transmission rejected.' });
-  }
-  if (!name || !email || !message) {
-    res.status(400).json({ error: 'Name, email, and message are required.' });
-    return;
-  }
-  const cleanName = String(name).trim().slice(0, 100);
-  const cleanEmail = String(email).trim().slice(0, 150);
-  const cleanSubject = String(subject || '').trim().slice(0, 200);
-  const cleanMessage = String(message).trim().slice(0, 10000);
-  const topic = category || game || 'General Inquiry';
-  console.log(`[Contact / Support Audit] [${new Date().toISOString()}] From: ${cleanName} <${cleanEmail}> | Topic: ${topic} | Subject: ${cleanSubject || 'No Subject'} | PayloadLen: ${cleanMessage.length}`);
+// POST /api/contact - Inquiries and Technical Consultation Audit Trail
+// Protected with dedicated rate limit (5 submissions per 15 min per IP),
+// botcheck honeypot, minimum completion time, duplicate protection, and input sanitization.
+app.post('/api/contact', contactRateLimiter, validateFormSubmissionMiddleware, (req, res) => {
+  const validated = res.locals.validatedForm as ValidatedFormBody;
+  const masked = maskEmail(validated.cleanEmail);
+  console.log(
+    `[Contact Audit] [${new Date().toISOString()}] IP: ${req.ip} | From: ${validated.cleanName} <${masked}> | Topic: ${validated.cleanTopic} | Subject: ${validated.cleanSubject || 'No Subject'} | PayloadLen: ${validated.cleanMessage.length}`
+  );
+  res.json({ success: true, message: 'Your transmission has been logged by Karsh Tech servers.' });
+});
+
+// POST /api/support - Support Ticket Audit Trail
+// Protected with dedicated rate limit (5 submissions per 15 min per IP),
+// botcheck honeypot, minimum completion time, duplicate protection, and input sanitization.
+app.post('/api/support', supportRateLimiter, validateFormSubmissionMiddleware, (req, res) => {
+  const validated = res.locals.validatedForm as ValidatedFormBody;
+  const masked = maskEmail(validated.cleanEmail);
+  console.log(
+    `[Support Audit] [${new Date().toISOString()}] IP: ${req.ip} | From: ${validated.cleanName} <${masked}> | Topic: ${validated.cleanTopic} | Subject: ${validated.cleanSubject || 'No Subject'} | PayloadLen: ${validated.cleanMessage.length}`
+  );
   res.json({ success: true, message: 'Your transmission has been logged by Karsh Tech servers.' });
 });
 

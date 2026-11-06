@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { api } from '../lib/api';
 import { submitKarshTechForm } from '../lib/formSubmission';
 import { Link } from '../context/RouterContext';
@@ -30,6 +30,7 @@ export const SupportPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [botcheck, setBotcheck] = useState('');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const formStartedAt = useRef<number>(Date.now());
 
   const supportTopics = [
     'General Technical Support',
@@ -78,6 +79,7 @@ export const SupportPage: React.FC = () => {
         subject: formData.subject || `Support Ticket: ${formData.game}`,
         message: formData.message,
         botcheck,
+        formStartedAt: formStartedAt.current,
         formType: 'support',
       });
       setSuccess(true);
@@ -89,6 +91,7 @@ export const SupportPage: React.FC = () => {
         message: '',
       });
       setBotcheck('');
+      formStartedAt.current = Date.now();
     } catch (err: any) {
       setError(err.message || 'Failed to dispatch transmission. Please try again or email us directly.');
     } finally {
@@ -180,6 +183,7 @@ export const SupportPage: React.FC = () => {
                   <input
                     type="text"
                     required
+                    maxLength={100}
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Jane Doe"
@@ -194,6 +198,7 @@ export const SupportPage: React.FC = () => {
                   <input
                     type="email"
                     required
+                    maxLength={150}
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="jane@example.com"
@@ -227,6 +232,7 @@ export const SupportPage: React.FC = () => {
                   <input
                     type="text"
                     required
+                    maxLength={200}
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                     placeholder="e.g. Sideloading Query / Bug Report"
@@ -242,6 +248,7 @@ export const SupportPage: React.FC = () => {
                 <textarea
                   required
                   rows={5}
+                  maxLength={5000}
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   placeholder="Describe your question, device specifications, or technical details..."
